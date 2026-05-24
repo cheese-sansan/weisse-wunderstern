@@ -3,25 +3,29 @@ Lite Agent Orchestrator - 主编排引擎
 
 零依赖轻量级智能体任务编排引擎，支持：
 - 多任务顺序/动态编排
+- 外部文件导入与分析（T0 预处理）
 - 状态持久化与断点续跑
 - 基于内容感知的动态任务分支
 - LLM增强 + Mock兜底双模式
 """
 
 import os
+import sys
 import json
 from datetime import datetime
 from utils.env_loader import load_env
 from utils.state_manager import ensure_output_dir, init_state, update_task_status, load_state, save_state, now_str
 from utils.context_manager import save_context
+from tasks.t0_document_parsing import run as t0_run
 from tasks.t1_keyword_extraction import run as t1_run
 from tasks.t2_literature_search import run as t2_run
 from tasks.t3_summary_generation import run as t3_run
 from tasks.t4_report_framework import run as t4_run
 
 
-# 加载 .env 环境变量配置
 load_env()
+
+TASK_ORDER = ["T0", "T1", "T2", "T3", "T4", "T5", "T6"]
 
 
 def get_last_completed_task(output_dir):
@@ -32,7 +36,7 @@ def get_last_completed_task(output_dir):
     output_dir: 输出目录路径
 
   返回:
-    str | None: 最后完成的任务ID（如 "T1"），无状态时返回 None
+    str | None: 最后完成的任务ID，无状态时返回 None
   """
   state_file = os.path.join(output_dir, "task_state.json")
   if not os.path.exists(state_file):
@@ -46,9 +50,8 @@ def get_last_completed_task(output_dir):
   except json.JSONDecodeError:
     return None
 
-  task_order = ["T1", "T2", "T3", "T4", "T5", "T6"]
   last_done = None
-  for tid in task_order:
+  for tid in TASK_ORDER:
     for t in state["task_list"]:
       if t["task_id"] == tid and t["status"] == "完成":
         last_done = tid
@@ -70,7 +73,7 @@ def log_resume(last_task, output_dir):
     if last_task:
       f.write(f"[续跑时间] {now}\n[恢复执行] 从 {last_task} 之后开始\n")
     else:
-      f.write(f"[启动时间] {now}\n[全新执行] 从 T1 开始\n")
+      f.write(f"[启动时间] {now}\n[全新执行] 从 T0 开始\n")
 
 
 def ensure_all_tasks_in_state(output_dir):
@@ -88,6 +91,7 @@ def ensure_all_tasks_in_state(output_dir):
     state = json.load(f)
   existing_ids = {t["task_id"] for t in state["task_list"]}
   base_tasks = [
+    ("T0", "文档内容提取"),
     ("T1", "关键词提取"),
     ("T2", "文献检索"),
     ("T3", "摘要生成"),
@@ -110,11 +114,12 @@ def ensure_all_tasks_in_state(output_dir):
       json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def run_pipeline(topic, output_dir="outputs"):
+def run_pipeline(topic="", output_dir="outputs", file_path=None):
   """
   运行完整的智能体编排管道。
 
   管道包含以下任务节点：
+  - T0: 文档内容提取（可选，仅当提供 file_path 时执行）
   - T1: 关键词提取
   - T2: 文献检索
   - T3: 摘要生成（文献不足时跳过）
@@ -123,8 +128,9 @@ def run_pipeline(topic, output_dir="outputs"):
   - T6: 政策影响评估（动态追加，条件触发）
 
   参数:
-    topic: 研究主题
+    topic: 研究主题（若提供 file_path，可从中自动提取）
     output_dir: 输出目录路径，默认为 "outputs"
+    file_path: 可选的外部文件路径，支持 TXT/MD/JSON/PDF/DOCX
   """
   os.makedirs(output_dir, exist_ok=True)
 
@@ -137,19 +143,44 @@ def run_pipeline(topic, output_dir="outputs"):
 
   if last_done is None:
     init_state()
-    next_task = "T1"
+    next_task = "T0"
   else:
     ensure_all_tasks_in_state(output_dir)
-    task_order = ["T1", "T2", "T3", "T4", "T5", "T6"]
-    idx = task_order.index(last_done)
-    next_task = task_order[idx + 1] if idx + 1 < len(task_order) else None
+    idx = TASK_ORDER.index(last_done)
+    next_task = TASK_ORDER[idx + 1] if idx + 1 < len(TASK_ORDER) else None
     if next_task is None:
       print(f" [OK] 所有任务已完成，无需重复执行。")
       return
 
-  print(f" [主题] {topic}")
+  print(f" [主题] {topic if topic else '(待从文件中提取)'}")
   print(f" [目录] {output_dir}")
+  if file_path:
+    print(f" [文件] {file_path}")
   print()
+
+  # T0: 文档内容提取（仅当提供文件时执行）
+  if next_task <= "T0" and file_path:
+    print(" -> [T0] 文档内容提取...")
+    update_task_status("T0", "进行中")
+    doc_result = t0_run(file_path)
+    save_context("T0", doc_result, output_dir)
+    update_task_status("T0", "完成")
+    print(f" [完成] [T0] 文件: {doc_result['file_name']} | 类型: {doc_result['file_type']} | 长度: {doc_result['content_length']} 字符")
+    # 若未指定 topic，从文档摘要中尝试提取
+    if not topic:
+      topic = doc_result.get("file_name", "文档分析")
+    next_task = "T1"
+  elif next_task <= "T0":
+    # 无文件输入，跳过 T0
+    if next_task == "T0":
+      update_task_status("T0", "完成")
+      print(" [跳过] [T0] 未提供外部文件，跳过文档提取")
+      next_task = "T1"
+
+  if not topic and next_task <= "T1":
+    print(" [ERROR] 未指定主题且未提供文件，无法继续。")
+    print("  用法: python main.py --topic \"研究主题\"  或  python main.py --file 文档路径")
+    sys.exit(1)
 
   # T1: 关键词提取
   if next_task <= "T1":
@@ -253,10 +284,34 @@ def run_pipeline(topic, output_dir="outputs"):
 
 
 if __name__ == "__main__":
+  import argparse
+
+  parser = argparse.ArgumentParser(
+      description="Lite Agent Orchestrator - 零依赖轻量级智能体编排引擎",
+      formatter_class=argparse.RawDescriptionHelpFormatter,
+      epilog="""
+示例:
+  python main.py --topic "2025 自动驾驶行业趋势"
+  python main.py --file ./documents/report.pdf
+  python main.py --file ./data/notes.txt --topic "AI安全合规分析"
+  python main.py --file ./doc.docx --output results/
+      """
+  )
+  parser.add_argument("--topic", "-t", default="", help="研究主题")
+  parser.add_argument("--file", "-f", default=None, help="外部文件路径（支持 TXT/MD/JSON/PDF/DOCX）")
+  parser.add_argument("--output", "-o", default="outputs", help="输出目录（默认: outputs）")
+
+  args = parser.parse_args()
+
+  if not args.topic and not args.file:
+    parser.print_help()
+    print("\n [提示] 请至少指定 --topic 或 --file 参数。")
+    sys.exit(1)
+
   print("=" * 50)
   print(" Lite Agent Orchestrator")
   print(" 零依赖轻量级智能体编排引擎")
   print("=" * 50)
   print()
-  run_pipeline("2025 Q3 AI行业趋势")
 
+  run_pipeline(topic=args.topic, output_dir=args.output, file_path=args.file)

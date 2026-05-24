@@ -35,6 +35,7 @@ def init_state():
   """
   ensure_output_dir()
   tasks = [
+    {"task_id": "T0", "task_name": "文档内容提取", "status": "未开始", "status_history": [{"status": "未开始", "timestamp": now_str()}]},
     {"task_id": "T1", "task_name": "关键词提取", "status": "未开始", "status_history": [{"status": "未开始", "timestamp": now_str()}]},
     {"task_id": "T2", "task_name": "文献检索", "status": "未开始", "status_history": [{"status": "未开始", "timestamp": now_str()}]},
     {"task_id": "T3", "task_name": "摘要生成", "status": "未开始", "status_history": [{"status": "未开始", "timestamp": now_str()}]},
