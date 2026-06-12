@@ -1,4 +1,4 @@
-./"""
+"""
 Lite Agent Orchestrator - 主编排引擎
 
 零依赖轻量级智能体任务编排引擎，支持：
@@ -26,6 +26,12 @@ from tasks.t4_report_framework import run as t4_run
 load_env()
 
 TASK_ORDER = ["T0", "T1", "T2", "T3", "T4", "T5", "T6"]
+TASK_INDEX = {tid: i for i, tid in enumerate(TASK_ORDER)}
+
+
+def should_run(task_id, next_task_id):
+    """基于索引判断任务是否应执行，避免字符串比较在 T10 之后出错。"""
+    return TASK_INDEX[task_id] >= TASK_INDEX[next_task_id]
 
 
 def get_last_completed_task(output_dir):
@@ -159,7 +165,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
   print()
 
   # T0: 文档内容提取（仅当提供文件时执行）
-  if next_task <= "T0" and file_path:
+  if should_run("T0", next_task) and file_path:
     print(" -> [T0] 文档内容提取...")
     update_task_status("T0", "进行中")
     doc_result = t0_run(file_path)
@@ -170,20 +176,20 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
     if not topic:
       topic = doc_result.get("file_name", "文档分析")
     next_task = "T1"
-  elif next_task <= "T0":
+  elif should_run("T0", next_task):
     # 无文件输入，跳过 T0
     if next_task == "T0":
       update_task_status("T0", "完成")
       print(" [跳过] [T0] 未提供外部文件，跳过文档提取")
       next_task = "T1"
 
-  if not topic and next_task <= "T1":
+  if not topic and should_run("T1", next_task):
     print(" [ERROR] 未指定主题且未提供文件，无法继续。")
     print("  用法: python main.py --topic \"研究主题\"  或  python main.py --file 文档路径")
     sys.exit(1)
 
   # T1: 关键词提取
-  if next_task <= "T1":
+  if should_run("T1", next_task):
     print(" -> [T1] 关键词提取...")
     update_task_status("T1", "进行中")
     keywords = t1_run(topic)
@@ -193,7 +199,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
     next_task = "T2"
 
   # T2: 文献检索
-  if next_task <= "T2":
+  if should_run("T2", next_task):
     print(" -> [T2] 文献检索...")
     update_task_status("T2", "进行中")
     literature = t2_run(keywords)
@@ -229,7 +235,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
       save_state(state)
 
   # T3: 摘要生成
-  if next_task <= "T3":
+  if should_run("T3", next_task):
     if "文献不足" in literature:
       print(" [跳过] [T3] 文献不足，跳过摘要生成")
       next_task = "T4"
@@ -243,7 +249,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
       next_task = "T4"
 
   # T4: 报告框架搭建
-  if next_task <= "T4":
+  if should_run("T4", next_task):
     print(" -> [T4] 报告框架搭建...")
     update_task_status("T4", "进行中")
     if "文献不足" in literature:
@@ -257,7 +263,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
     next_task = "T5"
 
   # T5: 技术案例分析（动态任务，条件触发）
-  if next_task <= "T5":
+  if should_run("T5", next_task):
     state = load_state()
     if any(t["task_id"] == "T5" and t["status"] == "未开始" for t in state["task_list"]):
       print(" -> [T5] 技术案例分析...")
@@ -269,7 +275,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
     next_task = "T6"
 
   # T6: 政策影响评估（动态任务，条件触发）
-  if next_task <= "T6":
+  if should_run("T6", next_task):
     state = load_state()
     if any(t["task_id"] == "T6" and t["status"] == "未开始" for t in state["task_list"]):
       print(" -> [T6] 政策影响评估...")
