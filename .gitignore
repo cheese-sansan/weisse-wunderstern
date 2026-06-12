@@ -23,3 +23,5 @@ env/
 # Output Files
 outputs/
 test_output_*/
+test_*/
+test_*.*
