@@ -11,6 +11,7 @@ Lite Agent Orchestrator - 主编排引擎
 
 import os
 import sys
+import json
 from datetime import datetime
 from utils.env_loader import load_env
 from utils.state_manager import now_str
@@ -138,32 +139,42 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
     print("  用法: python main.py --topic \"研究主题\"  或  python main.py --file 文档路径")
     sys.exit(1)
 
-  # T1: 关键词提取
+  # T1: 关键词与学术实体提取
   if should_run("T1", next_task):
-    print(" -> [T1] 关键词提取...")
+    print(" -> [T1] 关键词与学术实体提取...")
     smgr.update_task_status("T1", "进行中")
-    keywords = t1_run(topic)
-    ctx.save("T1", keywords)
+    t1_output = t1_run(topic)
+    ctx.save("T1", t1_output)
     smgr.update_task_status("T1", "完成")
-    print(f" [完成] [T1] 关键词: {keywords}")
+    keywords = t1_output.get("keywords", [])
+    entities = t1_output.get("academic_entities", {})
+    print(f" [完成] [T1] 关键词: {keywords} | 实体: {json.dumps({k: v for k, v in entities.items() if k != 'relations'}, ensure_ascii=False)}")
     next_task = "T2"
 
-  # T2: 文献检索
+  # T2: 结构化文献检索
   if should_run("T2", next_task):
     print(" -> [T2] 文献检索...")
     smgr.update_task_status("T2", "进行中")
-    literature = t2_run(keywords)
-    ctx.save("T2", literature)
+    t2_output = t2_run(t1_output)
+    ctx.save("T2", t2_output)
     smgr.update_task_status("T2", "完成")
-    print(f" [完成] [T2] 检索结果长度: {len(literature)} 字符")
+    lit_results = t2_output.get("literature_results", [])
+    print(f" [完成] [T2] 检索到 {len(lit_results)} 条文献")
     next_task = "T3"
 
-    # 动态任务路由
+    # 动态任务路由：基于学术实体字段判断是否追加 T5/T6
     state = smgr.load_state()
     has_t5 = any(t["task_id"] == "T5" for t in state["task_list"])
     has_t6 = any(t["task_id"] == "T6" for t in state["task_list"])
-    need_t5 = "技术突破" in literature or "创新案例" in literature
-    need_t6 = any(kw in literature for kw in ["政策法规", "监管", "合规", "法律", "标准"])
+    methods = [m.lower() for m in entities.get("methods", [])]
+    domains = [d.lower() for d in entities.get("domains", [])]
+    policy_domains = {"policy", "law", "legal", "regulation", "governance", "compliance"}
+    need_t5 = bool(methods) or any(
+        kw in " ".join(methods + domains) for kw in ["transformer", "diffusion", "gan", "rl", "reinforcement"]
+    )
+    need_t6 = bool(set(domains) & policy_domains) or any(
+        kw in str(keywords) for kw in ["政策", "法规", "监管", "合规", "法律", "标准"]
+    )
 
     if need_t5 and not has_t5:
       state["task_list"].append({
@@ -172,7 +183,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
         "status": "未开始",
         "status_history": [{"status": "未开始", "timestamp": now_str()}]
       })
-      print(" [动态路由] 检测到技术突破/创新案例 -> 追加 T5 任务")
+      print(" [动态路由] 检测到技术方法实体 -> 追加 T5 任务")
     if need_t6 and not has_t6:
       state["task_list"].append({
         "task_id": "T6",
@@ -180,19 +191,20 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
         "status": "未开始",
         "status_history": [{"status": "未开始", "timestamp": now_str()}]
       })
-      print(" [动态路由] 检测到政策法规相关内容 -> 追加 T6 任务")
+      print(" [动态路由] 检测到政策/监管领域 -> 追加 T6 任务")
     if need_t5 or need_t6:
       smgr.save_state(state)
 
   # T3: 摘要生成
+  literature_is_empty = len(lit_results) == 0
   if should_run("T3", next_task):
-    if "文献不足" in literature:
+    if literature_is_empty:
       print(" [跳过] [T3] 文献不足，跳过摘要生成")
       next_task = "T4"
     else:
       print(" -> [T3] 摘要生成...")
       smgr.update_task_status("T3", "进行中")
-      summary = t3_run(literature)
+      summary = t3_run(t2_output)
       ctx.save("T3", summary)
       smgr.update_task_status("T3", "完成")
       print(f" [完成] [T3] 摘要长度: {len(summary)} 字符")
@@ -202,7 +214,7 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
   if should_run("T4", next_task):
     print(" -> [T4] 报告框架搭建...")
     smgr.update_task_status("T4", "进行中")
-    if "文献不足" in literature:
+    if literature_is_empty:
       report = "# 报告框架\n\n## 摘要\n文献不足，建议补充检索\n\n## 分点提纲\n（无内容）"
     else:
       report = t4_run(topic, summary)
