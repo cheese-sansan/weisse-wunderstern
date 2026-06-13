@@ -23,5 +23,11 @@ env/
 # Output Files
 outputs/
 test_output_*/
-test_*/
-test_*.*
+test_cli/
+test_verify/
+test_phase1/
+test_quick/
+test_debug*/
+test_direct/
+test_isolation_*
+test_p1/

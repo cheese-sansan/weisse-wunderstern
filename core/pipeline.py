@@ -9,8 +9,18 @@ import os
 import json
 from datetime import datetime
 
+from utils.logger import get_logger
 from utils.state_manager import StateManager, now_str
 from utils.context_manager import ContextStore
+
+log = get_logger(__name__)
+
+
+def _jlog(job_id, msg):
+    """同时输出到控制台和日志。"""
+    text = f"[Job {job_id}] {msg}"
+    print(text)
+    log.info(text)
 from tasks.t0_document_parsing import run as t0_run
 from tasks.t1_keyword_extraction import run as t1_run
 from tasks.t2_literature_search import run as t2_run

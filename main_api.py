@@ -24,9 +24,12 @@ except ImportError:
     sys.exit(1)
 
 from utils.env_loader import load_env
+from utils.logger import get_logger
 from utils.state_manager import StateManager
 from utils.context_manager import ContextStore
 from core.pipeline import run_job, PipelineError
+
+log = get_logger(__name__)
 
 load_env()
 
@@ -51,6 +54,7 @@ def _run_job_background(job_id: str, topic: str, file_path: str = None):
     try:
         run_job(job_id, topic=topic, file_path=file_path)
     except Exception as e:
+        log.error("Job %s 执行失败: %s", job_id, e)
         try:
             smgr = StateManager(job_id)
             smgr.set_error(f"{type(e).__name__}: {e}")
