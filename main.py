@@ -112,6 +112,8 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
     print(f" [文件] {file_path}")
   print()
 
+  doc_result = None  # 用于后续 T3 引用原始文档
+
   # T0: 文档内容提取（仅当提供文件时执行）
   if should_run("T0", next_task) and file_path:
     print(" -> [T0] 文档内容提取...")
@@ -195,19 +197,24 @@ def run_pipeline(topic="", output_dir="outputs", file_path=None):
     if need_t5 or need_t6:
       smgr.save_state(state)
 
-  # T3: 摘要生成
+  # T3: Extractor-Critic-Synthesizer 审稿反思环路
   literature_is_empty = len(lit_results) == 0
   if should_run("T3", next_task):
     if literature_is_empty:
       print(" [跳过] [T3] 文献不足，跳过摘要生成")
       next_task = "T4"
     else:
-      print(" -> [T3] 摘要生成...")
+      print(" -> [T3] 审稿反思环路 (Extractor -> Critic -> Synthesizer)...")
       smgr.update_task_status("T3", "进行中")
-      summary = t3_run(t2_output)
-      ctx.save("T3", summary)
+      t3_output = t3_run(t2_output, doc_result if file_path else None)
+      ctx.save("T3", t3_output)
       smgr.update_task_status("T3", "完成")
-      print(f" [完成] [T3] 摘要长度: {len(summary)} 字符")
+      summary = t3_output.get("final_report", "")
+      critic = t3_output.get("critic_review", {})
+      critiques = critic.get("critiques", [])
+      print(f" [完成] [T3] Extractor: {len(t3_output.get('extractor_draft', {}).get('claims', []))} claims | "
+            f"Critic: {len(critiques)} critiques | "
+            f"Report: {len(summary)} 字符")
       next_task = "T4"
 
   # T4: 报告框架搭建

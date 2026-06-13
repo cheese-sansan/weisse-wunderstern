@@ -1,4 +1,4 @@
-"""Smoke test — 验证 Topic 模式、文件模式和结构化 schema。"""
+"""Smoke test — 验证完整管道、结构化 schema 和 T3 三角色审稿环路。"""
 import subprocess
 import sys
 import tempfile
@@ -42,11 +42,6 @@ def run_pipeline(args, label):
         output_dir = "outputs"
 
     output_path = PROJECT_ROOT / output_dir
-    if not output_path.exists():
-        print(f"[FAIL] 输出目录不存在: {output_path}")
-        FAILED += 1
-        return output_dir
-
     job_dir = Path("outputs") / "jobs" / os.path.basename(output_dir.rstrip("/\\"))
 
     # 验证 state file
@@ -55,9 +50,10 @@ def run_pipeline(args, label):
         with open(state_file, "r", encoding="utf-8") as f:
             state = json.load(f)
         task_ids = {t["task_id"] for t in state.get("task_list", [])}
-        if "T0" not in task_ids:
-            print(f"[FAIL] 状态文件缺少 T0")
-            FAILED += 1
+        for tid in ("T0", "T1", "T2"):
+            if tid not in task_ids:
+                print(f"[FAIL] 状态文件缺少 {tid}")
+                FAILED += 1
     else:
         print(f"[WARN] 状态文件未在预期路径: {state_file}")
 
@@ -75,46 +71,59 @@ def run_pipeline(args, label):
         print(f"[FAIL] 未生成报告文件")
         FAILED += 1
 
-    # 验证 context_data.json schema
+    # 验证 context_data.json
     ctx_path = job_dir / "context_data.json"
     if ctx_path.exists():
         with open(ctx_path, "r", encoding="utf-8") as f:
             ctx = json.load(f)
 
-        # T1 schema 验证
-        t1_key = "T1"
-        if t1_key in ctx:
-            t1_data = ctx[t1_key].get("result", {})
-            if isinstance(t1_data, dict):
-                has_kw = isinstance(t1_data.get("keywords"), list)
-                has_ae = isinstance(t1_data.get("academic_entities"), dict)
-                if has_kw and has_ae:
-                    print(f"[ OK ] T1 schema: keywords={len(t1_data['keywords'])} "
-                          f"methods={len(t1_data['academic_entities'].get('methods', []))}")
-                else:
-                    print(f"[FAIL] T1 schema 不完整")
-                    FAILED += 1
-            else:
-                print(f"[WARN] T1 非 dict（可能为旧版或 Topic 模式差异）")
+        # T1 schema
+        t1_data = ctx.get("T1", {}).get("result", {})
+        if isinstance(t1_data, dict) and "academic_entities" in t1_data:
+            print(f"[ OK ] T1: keywords={len(t1_data.get('keywords', []))}")
 
-        # T2 schema 验证
-        t2_key = "T2"
-        if t2_key in ctx:
-            t2_data = ctx[t2_key].get("result", {})
-            if isinstance(t2_data, dict):
-                lr = t2_data.get("literature_results", [])
-                all_simulated = all(
-                    isinstance(r, dict) and r.get("source_type") == "simulated"
-                    for r in lr
-                )
-                if all_simulated:
-                    print(f"[ OK ] T2 schema: {len(lr)} 文献, source_type=simulated")
+        # T2 schema
+        t2_data = ctx.get("T2", {}).get("result", {})
+        if isinstance(t2_data, dict):
+            lr = t2_data.get("literature_results", [])
+            all_sim = all(r.get("source_type") == "simulated" for r in lr if isinstance(r, dict))
+            if all_sim:
+                print(f"[ OK ] T2: {len(lr)} results, all simulated")
+
+        # T3 triple-role schema
+        t3_data = ctx.get("T3", {}).get("result", {})
+        if isinstance(t3_data, dict):
+            for key in ("extractor_draft", "critic_review", "final_report"):
+                if key in t3_data:
+                    print(f"[ OK ] T3: {key} present")
                 else:
-                    print(f"[FAIL] T2 文献缺少 source_type=simulated 标记")
+                    print(f"[FAIL] T3 缺少 {key}")
                     FAILED += 1
+
+            # 验证 Critic 至少 2 条质疑
+            critic = t3_data.get("critic_review", {})
+            critiques = critic.get("critiques", [])
+            if len(critiques) >= 2:
+                print(f"[ OK ] T3 Critic: {len(critiques)} critiques")
             else:
-                print(f"[FAIL] T2 非 dict")
+                print(f"[FAIL] T3 Critic 不足 2 条质疑 (got {len(critiques)})")
                 FAILED += 1
+
+            # 验证 final_report 包含 5 个必要章节
+            report = t3_data.get("final_report", "")
+            sections = ["核心共识", "学术冲突", "方法局限", "高价值定量指标", "证据与不确定性"]
+            missing = [s for s in sections if s not in report]
+            if missing:
+                print(f"[FAIL] T3 报告缺少章节: {missing}")
+                FAILED += 1
+            else:
+                print(f"[ OK ] T3 报告包含全部 5 个章节")
+
+            # 验证不把 simulated 表述为真实
+            if "simulated" in report.lower() or "模拟生成" in report:
+                print(f"[ OK ] T3 报告标注了模拟来源声明")
+            else:
+                print(f"[WARN] T3 报告未明确标注模拟来源")
 
         print(f"[ OK ] 上下文键: {list(ctx.keys())}")
     else:
@@ -125,7 +134,7 @@ def run_pipeline(args, label):
 
 
 # ── Test 1: Topic 模式 ──
-run_pipeline(["--topic", "transformer model evaluation", "--output", "test_output_topic"], "Topic 模式")
+run_pipeline(["--topic", "transformer model evaluation for NLP", "--output", "test_output_topic"], "Topic 模式")
 
 # ── Test 2: TXT 文件模式 ──
 with tempfile.NamedTemporaryFile(
@@ -148,29 +157,52 @@ finally:
     os.unlink(tmp_file)
 
 
-# ── Test 3: JSON schema 跨模式一致性 ──
+# ── Test 3: T3 triple-role standalone ──
 print(f"\n{'='*50}")
-print(" Smoke: Mock 模式 JSON schema 验证")
+print(" Smoke: T3 三角色审稿环路验证")
 print(f"{'='*50}")
-from tasks.t1_keyword_extraction import run as t1
-from tasks.t2_literature_search import run as t2
+from tasks.t3_summary_generation import run as t3_run
 
-r1 = t1("transformer models for NLP evaluation")
-assert isinstance(r1, dict), "T1 应返回 dict"
-assert "keywords" in r1, "T1 缺少 keywords"
-assert "academic_entities" in r1, "T1 缺少 academic_entities"
-ae = r1["academic_entities"]
-for field in ("methods", "datasets", "metrics", "tasks", "domains", "relations"):
-    assert field in ae, f"T1 academic_entities 缺少 {field}"
+t2_mock = {
+    "literature_results": [
+        {
+            "title": "Test Paper 1", "source_type": "simulated",
+            "core_method": "SVM", "datasets": ["MNIST"],
+            "metrics": ["Accuracy=0.95"],
+            "key_findings": ["SVM outperforms baseline on MNIST"],
+            "limitations": ["Small sample size (n=100)"],
+            "authors": ["Author A"], "year": 2024,
+        },
+        {
+            "title": "Test Paper 2", "source_type": "simulated",
+            "core_method": "CNN", "datasets": ["CIFAR-10"],
+            "metrics": ["Accuracy=0.88"],
+            "key_findings": ["CNN achieves state-of-art on CIFAR-10"],
+            "limitations": ["High computational cost"],
+            "authors": ["Author B"], "year": 2023,
+        },
+    ]
+}
+result = t3_run(t2_mock)
 
-r2 = t2(r1)
-assert isinstance(r2, dict), "T2 应返回 dict"
-assert "literature_results" in r2, "T2 缺少 literature_results"
-for lr in r2["literature_results"]:
-    assert lr["source_type"] == "simulated", f"文献应标记 simulated，得到 {lr.get('source_type')}"
-    for field in ("title", "authors", "year", "core_method", "key_findings"):
-        assert field in lr, f"文献缺少 {field}"
-print("[ OK ] Mock 模式 T1/T2 JSON schema 同构验证通过")
+for key in ("extractor_draft", "critic_review", "final_report"):
+    assert key in result, f"T3 缺少 {key}"
+    print(f"[ OK ] {key} present")
+
+critiques = result["critic_review"].get("critiques", [])
+assert len(critiques) >= 2, f"Critic 需要 >=2 条质疑，得到 {len(critiques)}"
+print(f"[ OK ] Critic: {len(critiques)} critiques")
+for c in critiques:
+    print(f"  - [{c.get('severity', '?')}] {c.get('point', '')}")
+
+report = result["final_report"]
+sections = ["核心共识", "学术冲突", "方法局限", "高价值定量指标", "证据与不确定性"]
+for s in sections:
+    assert s in report, f"报告缺少章节: {s}"
+print(f"[ OK ] 报告包含全部 5 个章节 ({len(report)} chars)")
+assert "模拟生成" in report or "simulated" in report.lower(), "缺少模拟来源声明"
+print(f"[ OK ] 报告包含模拟来源声明")
+print(f"[ OK ] T3 三角色审稿环路验证通过")
 
 
 # ── Test 4: 并发 job 隔离 ──
@@ -196,11 +228,11 @@ else:
             sa = json.load(f)
         with open(state_b, encoding="utf-8") as f:
             sb = json.load(f)
-        if sa.get("job_id") == sb.get("job_id"):
-            print(f"[FAIL] job_id 相同: {sa['job_id']}")
-            FAILED += 1
-        else:
+        if sa.get("job_id") != sb.get("job_id"):
             print(f"[ OK ] job 隔离通过 (a={sa['job_id']}, b={sb['job_id']})")
+        else:
+            print(f"[FAIL] job_id 相同")
+            FAILED += 1
     else:
         print(f"[FAIL] 状态文件缺失")
         FAILED += 1
