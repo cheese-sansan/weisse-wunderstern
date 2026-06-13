@@ -57,8 +57,8 @@ def run_pipeline(args, label):
     else:
         print(f"[WARN] 状态文件未在预期路径: {state_file}")
 
-    # 验证报告文件
-    report_path = output_path / "report_framework.md"
+    # 验证报告文件（位于 job 目录下）
+    report_path = job_dir / "report_framework.md"
     if report_path.exists():
         with open(report_path, "r", encoding="utf-8") as f:
             content = f.read()

@@ -23,5 +23,8 @@
 # 图片 OCR（需额外安装 Tesseract 引擎）
 # pip install Pillow pytesseract
 
+# API 服务（FastAPI 异步服务层）
+# pip install fastapi uvicorn python-multipart
+
 # 开发与测试
 # pip install pytest
