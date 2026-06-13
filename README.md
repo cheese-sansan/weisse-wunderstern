@@ -30,10 +30,10 @@ Generated artifacts are written to:
 
 ```text
 outputs/jobs/{job_id}/
-├── task_state.json
-├── context_data.json
-├── resume_log.txt
-└── report_framework.md
+|-- task_state.json
+|-- context_data.json
+|-- resume_log.txt
+`-- report_framework.md
 ```
 
 ## API Service
@@ -100,6 +100,8 @@ python scripts/privacy_audit.py --history
 - [Developer integration](docs/developer_integration.md)
 - [Development guide](DEVELOPMENT.md)
 - [Roadmap](README_plan.md)
+- [Release checklist](docs/release_checklist.md)
+- [v0.1.0 release notes](docs/releases/v0.1.0.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Changelog](CHANGELOG.md)

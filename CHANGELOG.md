@@ -4,6 +4,10 @@ All notable changes to Weisse Wunderstern are documented here.
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## v0.1.0 - 2026-06-14
+
 ### Added
 
 - CLI topic/file analysis pipeline.
