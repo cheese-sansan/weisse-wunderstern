@@ -1,6 +1,6 @@
 # Weisse Wunderstern
 
-Weisse Wunderstern is a lightweight text report analysis service. It can run as a local CLI/TUI tool, a FastAPI service, a Docker deployment, or a small Python library embedded in another project.
+Weisse Wunderstern is a poetic lightweight agent for distilling topics, tracing ideas, and forging structured research reports. It can run as a local CLI/TUI tool, a FastAPI service, a Docker deployment, or a small Python library embedded in another project.
 
 The project focuses on document/topic distillation: parse input, extract keywords and academic entities, generate structured literature candidates, run a lightweight extractor/critic/synthesizer loop, and produce a Markdown report.
 

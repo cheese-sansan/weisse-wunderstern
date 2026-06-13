@@ -1,39 +1,45 @@
-# Python
+# Python bytecode and caches
 __pycache__/
-*.pyc
-*.pyo
-*.egg-info/
+*.py[cod]
+*$py.class
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
 htmlcov/
-dist/
-build/
+cover/
 
-# Virtual Environment
+# Build and packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
 .venv/
 venv/
 env/
+ENV/
+env.bak/
+venv.bak/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Environment Variables
+# Local configuration and credentials
 .env
 .env.*
 !.env.example
+.envrc
 *.key
 *.pem
 *.p12
 *.pfx
+.pypirc
 secrets/
 private_samples/
 
-# Output Files
+# Generated outputs
 outputs/
 test_output_*/
 test_cli/
@@ -49,3 +55,17 @@ test_p1/
 *.log
 *.tmp
 *.bak
+tempCodeRunnerFile.py
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Notebook and local tool state
+.ipynb_checkpoints/
+.streamlit/secrets.toml
+.abstra/
