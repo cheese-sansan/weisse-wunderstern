@@ -1,0 +1,71 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+cover/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+.envrc
+*.key
+*.pem
+*.p12
+*.pfx
+.pypirc
+secrets/
+private_samples/
+
+# Generated outputs
+outputs/
+test_output_*/
+test_cli/
+test_verify/
+test_phase1/
+test_quick/
+test_debug*/
+test_direct/
+test_isolation_*
+test_p1/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+tempCodeRunnerFile.py
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Notebook and local tool state
+.ipynb_checkpoints/
+.streamlit/secrets.toml
+.abstra/
