@@ -80,6 +80,86 @@ pip install Pillow pytesseract
 
 图片 OCR 还需要本机安装 Tesseract 引擎。
 
+### 4. Docker 部署
+
+#### API 服务
+
+```bash
+# 启动 API 服务
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+```
+
+API 服务默认监听 `http://localhost:8000`，文档地址 `http://localhost:8000/docs`。
+
+环境变量（`.env` 或 docker-compose 环境）：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `API_TOKEN` | (空) | API 鉴权 token，不设置则公开访问 |
+| `API_PORT` | 8000 | 服务端口 |
+| `MAX_UPLOAD_SIZE_MB` | 50 | 上传文件大小限制 |
+| `JOB_RETENTION_DAYS` | 7 | 任务结果保留天数 |
+| `LOG_LEVEL` | INFO | 日志级别 (DEBUG/INFO/WARNING/ERROR) |
+| `OPENAI_API_KEY` | (空) | LLM API Key，不设置则 Mock 模式 |
+| `LLM_MODEL` | deepseek-chat | 模型名称 |
+
+#### 完整依赖版（含 PDF/DOCX 解析）
+
+```bash
+docker compose --profile full up -d
+```
+
+#### CLI 模式
+
+```bash
+docker compose run --rm -e MODE=cli api python main.py --topic "AI safety"
+```
+
+#### API 鉴权
+
+设置 `API_TOKEN` 后，所有 `/api/v1/jobs/*` 端点需要 Bearer token：
+
+```bash
+curl -H "Authorization: Bearer your_token" http://localhost:8000/api/v1/jobs/status/xxx
+```
+
+### 5. API 接口
+
+**提交任务**：
+```bash
+curl -X POST http://localhost:8000/api/v1/jobs/submit \
+  -F "topic=AI safety"
+```
+
+**查询状态**：
+```bash
+curl http://localhost:8000/api/v1/jobs/status/{job_id}
+```
+
+**获取结果**：
+```bash
+curl http://localhost:8000/api/v1/jobs/result/{job_id}
+```
+
+### 6. 运行测试
+
+```bash
+# 全部检查（编译 + 单元测试）
+python check_all.py
+
+# 仅编译检查
+python check_all.py --compile
+
+# 仅单元测试（55 项）
+python -m unittest discover tests -v
+```
+
 ## 当前管道
 
 ```mermaid

@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  api:
+    build: .
+    container_name: lite-agent-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - MODE=api
+      - API_PORT=8000
+      - TZ=Asia/Shanghai
+      # 可选：LLM API 配置
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.deepseek.com/v1}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
+      # 可选：API 鉴权 token
+      - API_TOKEN=${API_TOKEN:-}
+      # 任务保留天数
+      - JOB_RETENTION_DAYS=${JOB_RETENTION_DAYS:-7}
+      # 上传限制
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-50}
+      # 日志级别
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./outputs:/app/outputs
+      - ./examples:/app/examples:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  api-with-extras:
+    profiles: ["full"]
+    build:
+      context: .
+      args:
+        INSTALL_EXTRAS: "true"
+    container_name: lite-agent-api-full
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - MODE=api
+      - API_PORT=8000
+      - TZ=Asia/Shanghai
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
+      - API_TOKEN=${API_TOKEN:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./outputs:/app/outputs
+      - ./examples:/app/examples:ro
+    restart: unless-stopped

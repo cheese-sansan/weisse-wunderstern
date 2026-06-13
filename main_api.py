@@ -12,10 +12,11 @@ import sys
 import json
 import threading
 import secrets
+import time
 from datetime import datetime, timezone, timedelta
 
 try:
-    from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+    from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
     from fastapi.responses import JSONResponse
     import uvicorn
 except ImportError:
@@ -41,6 +42,64 @@ app = FastAPI(
 
 TZ = timezone(timedelta(hours=8))
 JOBS_OUTPUT_DIR = os.path.join("outputs", "jobs")
+
+# ── 配置 ──
+API_TOKEN = os.environ.get("API_TOKEN", "").strip()
+MAX_UPLOAD_SIZE_MB = int(os.environ.get("MAX_UPLOAD_SIZE_MB", "50"))
+ALLOWED_EXTENSIONS = {
+    ".txt", ".md", ".markdown", ".pdf", ".docx", ".json",
+    ".csv", ".html", ".htm", ".xml", ".epub", ".rtf",
+    ".tex", ".rst", ".log", ".ini", ".yaml", ".yml",
+}
+
+# ── 鉴权中间件 ──
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """简单 token 鉴权。未配置 API_TOKEN 时跳过。"""
+    if request.url.path in ("/health", "/docs", "/openapi.json", "/redoc"):
+        return await call_next(request)
+    if not API_TOKEN:
+        return await call_next(request)
+    auth = request.headers.get("Authorization", "")
+    expected = f"Bearer {API_TOKEN}"
+    if auth != expected:
+        return JSONResponse(status_code=401, content={"detail": "未授权：需要有效的 API Token"})
+    return await call_next(request)
+
+
+# ── 文件验证 ──
+
+def _validate_upload(file: UploadFile):
+    """验证上传文件的扩展名和内容。"""
+    if file is None or not file.filename:
+        raise HTTPException(status_code=400, detail="未提供文件")
+    _, ext = os.path.splitext(file.filename)
+    if ext.lower() not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型 '{ext}'。允许的类型: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+
+# ── 定期清理 ──
+
+def _schedule_cleanup(interval_hours: int = 1):
+    """后台线程定期清理过期 job。"""
+    def _run():
+        while True:
+            time.sleep(interval_hours * 3600)
+            try:
+                from utils.job_cleanup import cleanup_old_jobs
+                deleted, total = cleanup_old_jobs()
+                if deleted > 0:
+                    log.info("定期清理: 删除 %d/%d 个过期 job", deleted, total)
+            except Exception as e:
+                log.warning("定期清理失败: %s", e)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    log.info("定期清理已启动 (间隔 %d 小时)", interval_hours)
 
 
 def _generate_job_id() -> str:
@@ -75,6 +134,10 @@ async def submit_job(
     if not topic and (file is None or file.filename == ""):
         raise HTTPException(status_code=400, detail="请提供 topic 或上传文件")
 
+    # 文件验证
+    if file and file.filename:
+        _validate_upload(file)
+
     job_id = _generate_job_id()
     job_dir = os.path.join(JOBS_OUTPUT_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -83,11 +146,21 @@ async def submit_job(
 
     # 保存上传文件
     if file and file.filename:
+        # 读取并检查大小
+        content = await file.read()
+        size_mb = len(content) / (1024 * 1024)
+        if size_mb > MAX_UPLOAD_SIZE_MB:
+            raise HTTPException(
+                status_code=413,
+                detail=f"文件过大 ({size_mb:.1f}MB)。最大允许: {MAX_UPLOAD_SIZE_MB}MB",
+            )
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="文件为空")
+
         input_dir = os.path.join(job_dir, "input")
         os.makedirs(input_dir, exist_ok=True)
         safe_name = os.path.basename(file.filename)
         uploaded_path = os.path.join(input_dir, safe_name)
-        content = await file.read()
         with open(uploaded_path, "wb") as f:
             f.write(content)
 
@@ -213,5 +286,9 @@ def _safe_get(d, *keys):
 
 if __name__ == "__main__":
     port = int(os.environ.get("API_PORT", "8000"))
+    _schedule_cleanup()
+    auth_status = "已启用" if API_TOKEN else "未启用（公开访问）"
     print(f"启动 Lite Agent Orchestrator API 服务 (端口 {port})...")
+    print(f"API 鉴权: {auth_status}")
+    print(f"上传限制: {MAX_UPLOAD_SIZE_MB}MB, 允许类型: {len(ALLOWED_EXTENSIONS)} 种")
     uvicorn.run("main_api:app", host="0.0.0.0", port=port, reload=False)
