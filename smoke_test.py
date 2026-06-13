@@ -4,11 +4,26 @@ import sys
 import tempfile
 import os
 import json
+import shutil
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 MAIN_PY = str(PROJECT_ROOT / "main.py")
+TUI_PY = str(PROJECT_ROOT / "main_tui.py")
 FAILED = 0
+SUBPROCESS_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+
+def configure_stdio():
+    """Keep captured UTF-8 output printable on Windows legacy consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+configure_stdio()
 
 
 def run_pipeline(args, label):
@@ -20,6 +35,8 @@ def run_pipeline(args, label):
     result = subprocess.run(
         [sys.executable, MAIN_PY] + args,
         capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        env=SUBPROCESS_ENV,
         cwd=str(PROJECT_ROOT),
     )
     print(result.stdout)
@@ -43,9 +60,10 @@ def run_pipeline(args, label):
 
     output_path = PROJECT_ROOT / output_dir
     job_dir = Path("outputs") / "jobs" / os.path.basename(output_dir.rstrip("/\\"))
+    full_job_dir = PROJECT_ROOT / job_dir
 
     # 验证 state file
-    state_file = job_dir / "task_state.json"
+    state_file = full_job_dir / "task_state.json"
     if state_file.exists():
         with open(state_file, "r", encoding="utf-8") as f:
             state = json.load(f)
@@ -58,7 +76,7 @@ def run_pipeline(args, label):
         print(f"[WARN] 状态文件未在预期路径: {state_file}")
 
     # 验证报告文件（位于 job 目录下）
-    report_path = job_dir / "report_framework.md"
+    report_path = full_job_dir / "report_framework.md"
     if report_path.exists():
         with open(report_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -72,7 +90,7 @@ def run_pipeline(args, label):
         FAILED += 1
 
     # 验证 context_data.json
-    ctx_path = job_dir / "context_data.json"
+    ctx_path = full_job_dir / "context_data.json"
     if ctx_path.exists():
         with open(ctx_path, "r", encoding="utf-8") as f:
             ctx = json.load(f)
@@ -133,8 +151,52 @@ def run_pipeline(args, label):
     return output_dir
 
 
+def clean_job(output_dir):
+    """清理指定 smoke job，避免历史 outputs 影响验证结果。"""
+    job_id = os.path.basename(output_dir.rstrip("/\\"))
+    job_dir = PROJECT_ROOT / "outputs" / "jobs" / job_id
+    if job_dir.exists():
+        shutil.rmtree(job_dir)
+
+
+def assert_rerun_is_noop(output_dir):
+    """已完成 job 再运行时应直接返回，不追加动态任务或改写状态。"""
+    global FAILED
+    job_id = os.path.basename(output_dir.rstrip("/\\"))
+    state_file = PROJECT_ROOT / "outputs" / "jobs" / job_id / "task_state.json"
+    with open(state_file, "r", encoding="utf-8") as f:
+        before = json.load(f)
+
+    result = subprocess.run(
+        [sys.executable, MAIN_PY, "--topic", "rerun should be noop", "--output", output_dir],
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        env=SUBPROCESS_ENV,
+        cwd=str(PROJECT_ROOT),
+    )
+    if result.returncode != 0:
+        print(f"[FAIL] 已完成 job 重跑失败: {result.returncode}")
+        FAILED += 1
+        return
+
+    with open(state_file, "r", encoding="utf-8") as f:
+        after = json.load(f)
+
+    before_tasks = [(t["task_id"], t["status"]) for t in before.get("task_list", [])]
+    after_tasks = [(t["task_id"], t["status"]) for t in after.get("task_list", [])]
+    if before_tasks == after_tasks and after.get("status") == "COMPLETED":
+        print(f"[ OK ] 已完成 job 重跑保持幂等")
+    else:
+        print(f"[FAIL] 已完成 job 重跑改写了任务状态")
+        print(f"  before={before_tasks}")
+        print(f"  after={after_tasks}")
+        FAILED += 1
+
+
 # ── Test 1: Topic 模式 ──
+clean_job("test_output_topic")
 run_pipeline(["--topic", "transformer model evaluation for NLP", "--output", "test_output_topic"], "Topic 模式")
+assert_rerun_is_noop("test_output_topic")
 
 # ── Test 2: TXT 文件模式 ──
 with tempfile.NamedTemporaryFile(
@@ -149,6 +211,7 @@ with tempfile.NamedTemporaryFile(
     tmp_file = f.name
 
 try:
+    clean_job("test_output_file")
     run_pipeline(
         ["--file", tmp_file, "--topic", "LLM benchmark evaluation", "--output", "test_output_file"],
         "TXT 文件模式",
@@ -205,17 +268,66 @@ print(f"[ OK ] 报告包含模拟来源声明")
 print(f"[ OK ] T3 三角色审稿环路验证通过")
 
 
-# ── Test 4: 并发 job 隔离 ──
+# ── Test 4: TUI one-shot and report viewing ──
+print(f"\n{'='*50}")
+print(" Smoke: TUI 一次性分析与报告查看")
+print(f"{'='*50}")
+clean_job("test_tui_topic")
+tui_run = subprocess.run(
+    [sys.executable, TUI_PY, "--topic", "TUI smoke transformer analysis", "--job-id", "test_tui_topic"],
+    capture_output=True, text=True,
+    encoding="utf-8", errors="replace",
+    env=SUBPROCESS_ENV,
+    cwd=str(PROJECT_ROOT),
+)
+if tui_run.returncode != 0:
+    print(f"[FAIL] TUI one-shot failed: {tui_run.returncode}")
+    print(tui_run.stdout)
+    print(tui_run.stderr)
+    FAILED += 1
+else:
+    report_path = PROJECT_ROOT / "outputs" / "jobs" / "test_tui_topic" / "report_framework.md"
+    if report_path.exists():
+        print("[ OK ] TUI one-shot generated report")
+    else:
+        print("[FAIL] TUI one-shot did not generate report")
+        FAILED += 1
+
+tui_report = subprocess.run(
+    [sys.executable, TUI_PY, "--report", "test_tui_topic"],
+    capture_output=True, text=True,
+    encoding="utf-8", errors="replace",
+    env=SUBPROCESS_ENV,
+    cwd=str(PROJECT_ROOT),
+)
+if tui_report.returncode == 0 and "Report: test_tui_topic" in tui_report.stdout:
+    print("[ OK ] TUI report viewer works")
+else:
+    print("[FAIL] TUI report viewer failed")
+    print(tui_report.stdout)
+    print(tui_report.stderr)
+    FAILED += 1
+
+
+# ── Test 5: 并发 job 隔离 ──
 print(f"\n{'='*50}")
 print(" Smoke: 并发 job 隔离")
 print(f"{'='*50}")
+clean_job("test_isolation_a")
+clean_job("test_isolation_b")
 t1_r = subprocess.run(
     [sys.executable, MAIN_PY, "--topic", "AI ethics", "--output", "test_isolation_a"],
-    capture_output=True, text=True, cwd=str(PROJECT_ROOT),
+    capture_output=True, text=True,
+    encoding="utf-8", errors="replace",
+    env=SUBPROCESS_ENV,
+    cwd=str(PROJECT_ROOT),
 )
 t2_r = subprocess.run(
     [sys.executable, MAIN_PY, "--topic", "climate change", "--output", "test_isolation_b"],
-    capture_output=True, text=True, cwd=str(PROJECT_ROOT),
+    capture_output=True, text=True,
+    encoding="utf-8", errors="replace",
+    env=SUBPROCESS_ENV,
+    cwd=str(PROJECT_ROOT),
 )
 if t1_r.returncode != 0 or t2_r.returncode != 0:
     print(f"[FAIL] 并发任务执行失败")

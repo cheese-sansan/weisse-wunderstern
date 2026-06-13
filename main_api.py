@@ -9,10 +9,11 @@ Lite Agent Orchestrator — FastAPI 异步服务入口
 
 import os
 import sys
-import json
+import re
 import threading
 import secrets
 import time
+from pathlib import PurePath, PureWindowsPath
 from datetime import datetime, timezone, timedelta
 
 try:
@@ -26,7 +27,7 @@ except ImportError:
 
 from utils.env_loader import load_env
 from utils.logger import get_logger
-from utils.state_manager import StateManager
+from utils.state_manager import StateManager, validate_job_id
 from utils.context_manager import ContextStore
 from core.pipeline import run_job, PipelineError
 
@@ -51,6 +52,7 @@ ALLOWED_EXTENSIONS = {
     ".csv", ".html", ".htm", ".xml", ".epub", ".rtf",
     ".tex", ".rst", ".log", ".ini", ".yaml", ".yml",
 }
+SAFE_FILENAME_PATTERN = re.compile(r"[^A-Za-z0-9._-]+")
 
 # ── 鉴权中间件 ──
 
@@ -74,12 +76,35 @@ def _validate_upload(file: UploadFile):
     """验证上传文件的扩展名和内容。"""
     if file is None or not file.filename:
         raise HTTPException(status_code=400, detail="未提供文件")
-    _, ext = os.path.splitext(file.filename)
+    safe_name = _sanitize_filename(file.filename)
+    _, ext = os.path.splitext(safe_name)
     if ext.lower() not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
             detail=f"不支持的文件类型 '{ext}'。允许的类型: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
+    return safe_name
+
+
+def _sanitize_filename(filename: str) -> str:
+    """将上传文件名规整为安全的单文件名，兼容 Windows 和 POSIX 路径。"""
+    raw_name = str(filename or "").strip()
+    leaf_name = PurePath(PureWindowsPath(raw_name).name).name
+    leaf_name = SAFE_FILENAME_PATTERN.sub("_", leaf_name).strip("._")
+    if not leaf_name:
+        leaf_name = "upload"
+    if len(leaf_name) > 128:
+        stem, ext = os.path.splitext(leaf_name)
+        leaf_name = f"{stem[:128 - len(ext)]}{ext}"
+    return leaf_name
+
+
+def _validate_api_job_id(job_id: str) -> str:
+    """校验 API 路径中的 job_id，非法时返回 400。"""
+    try:
+        return validate_job_id(job_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── 定期清理 ──
@@ -136,7 +161,9 @@ async def submit_job(
 
     # 文件验证
     if file and file.filename:
-        _validate_upload(file)
+        safe_name = _validate_upload(file)
+    else:
+        safe_name = None
 
     job_id = _generate_job_id()
     job_dir = os.path.join(JOBS_OUTPUT_DIR, job_id)
@@ -159,7 +186,6 @@ async def submit_job(
 
         input_dir = os.path.join(job_dir, "input")
         os.makedirs(input_dir, exist_ok=True)
-        safe_name = os.path.basename(file.filename)
         uploaded_path = os.path.join(input_dir, safe_name)
         with open(uploaded_path, "wb") as f:
             f.write(content)
@@ -189,6 +215,7 @@ async def submit_job(
 @app.get("/api/v1/jobs/status/{job_id}")
 async def job_status(job_id: str):
     """查询任务状态。"""
+    job_id = _validate_api_job_id(job_id)
     state_file = os.path.join(JOBS_OUTPUT_DIR, job_id, "task_state.json")
     if not os.path.exists(state_file):
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' 不存在")
@@ -221,6 +248,7 @@ async def job_status(job_id: str):
 @app.get("/api/v1/jobs/result/{job_id}")
 async def job_result(job_id: str):
     """获取任务结果（仅 COMPLETED 状态）。"""
+    job_id = _validate_api_job_id(job_id)
     state_file = os.path.join(JOBS_OUTPUT_DIR, job_id, "task_state.json")
     if not os.path.exists(state_file):
         raise HTTPException(status_code=404, detail=f"Job '{job_id}' 不存在")

@@ -1,75 +1,108 @@
 # Lite Agent Orchestrator
 
-轻量级学术文献提炼引擎 —— 从论文和文档中自动提取关键信息，通过多智能体审稿反思生成结构化 Markdown 分析报告。
+Lite Agent Orchestrator is a lightweight text report analysis service. It can run as a local CLI/TUI tool, a FastAPI service, a Docker deployment, or a small Python library embedded in another project.
 
-## 核心能力
+The project focuses on document/topic distillation: parse input, extract keywords and academic entities, generate structured literature candidates, run a lightweight extractor/critic/synthesizer loop, and produce a Markdown report.
 
-- **多格式文档解析**：支持 PDF、DOCX、TXT、Markdown、EPUB 等格式，零依赖基础模式 + 可选高保真解析
-- **学术实体抽取**：自动识别论文中的方法、数据集、指标、任务域和实体关系
-- **结构化文献检索**：基于关键词和实体生成文献候选（支持 LLM 增强和 Mock 模式）
-- **三角色审稿反思**：Extractor 提炼证据 → Critic 审稿质疑 → Synthesizer 综合报告
-- **异步 API 服务**：提交-轮询-获取结果的 RESTful 接口，支持并发任务隔离
-- **LLM/Mock 双模式**：配置 OpenAI 兼容 API 后启用 LLM 增强，未配置时自动回退
+## Features
 
-## 快速开始
+- CLI pipeline for topic or file analysis.
+- Zero-dependency TUI for local interactive use.
+- FastAPI service with submit/status/result endpoints.
+- Docker Compose deployment with optional document parsing extras.
+- Mock mode that works without any API key.
+- Optional OpenAI-compatible LLM enhancement.
+- Job-isolated state and artifacts under `outputs/jobs/{job_id}/`.
+- Privacy audit, unit tests, smoke tests, API tests, and GitHub Actions CI.
+
+## Quick Start
 
 ```bash
-# 安装（核心零依赖，仅需 Python 3.10+）
 git clone <repo-url>
 cd lite-agent-orchestrator
 
-# CLI 模式 — 基于主题分析
 python main.py --topic "transformer model evaluation"
-
-# CLI 模式 — 基于文档分析
 python main.py --file ./examples/sample_paper_abstract.md
+python main_tui.py
+```
 
-# API 模式 — 启动服务
-pip install fastapi uvicorn python-multipart
+Generated artifacts are written to:
+
+```text
+outputs/jobs/{job_id}/
+├── task_state.json
+├── context_data.json
+├── resume_log.txt
+└── report_framework.md
+```
+
+## API Service
+
+```bash
+pip install -r requirements-api.txt
 python main_api.py
 ```
 
-## API 接口
-
 ```bash
-# 提交任务
 curl -X POST http://localhost:8000/api/v1/jobs/submit -F "topic=AI safety"
-
-# 查询状态
 curl http://localhost:8000/api/v1/jobs/status/{job_id}
-
-# 获取报告
 curl http://localhost:8000/api/v1/jobs/result/{job_id}
 ```
 
-## Docker 部署
+Set `API_TOKEN` to require bearer-token authentication for `/api/v1/jobs/*`.
+
+## Docker
 
 ```bash
-docker compose up -d          # 启动 API 服务
-docker compose logs -f        # 查看日志
+docker compose up -d
+docker compose logs -f
 ```
 
-## 项目结构
+Build with optional parsing dependencies:
 
-```
-├── core/pipeline.py          # 管道执行器（CLI + API 共享）
-├── main.py                   # CLI 入口
-├── main_api.py               # FastAPI 服务
-├── tasks/                    # T0-T4 任务模块
-├── utils/                    # 工具模块
-├── tests/                    # 55 项单元测试
-├── examples/                 # 示例输入
-└── docker-compose.yml        # Docker 部署
+```powershell
+$env:INSTALL_EXTRAS="true"
+docker compose up -d --build
 ```
 
-## 文档
+If Docker Hub is unavailable, override the base image:
 
-- [开发指南](DEVELOPMENT.md) — 详细的项目说明、管道架构、配置
-- [演进计划](README_plan.md) — 阶段路线图和验收标准
+```powershell
+$env:PYTHON_IMAGE="docker.m.daocloud.io/library/python:3.10-slim"
+docker compose build api
+```
 
-## 技术栈
+## Optional LLM Mode
 
-Python 3.10+ / FastAPI / Docker — 核心零依赖，Mock 模式持续可用
+Mock mode is the default and requires no key. To enable an OpenAI-compatible LLM provider:
+
+```bash
+cp .env.example .env
+# edit OPENAI_API_KEY / OPENAI_API_BASE / LLM_MODEL
+```
+
+Never commit `.env` or real credentials.
+
+## Quality Checks
+
+```bash
+python check_all.py
+python smoke_test.py
+python test_api_client.py
+python scripts/privacy_audit.py --history
+```
+
+`check_all.py` runs privacy auditing, Python compilation, and unit tests.
+
+## Documentation
+
+- [CLI/TUI/API usage](docs/cli_tui_api.md)
+- [Developer integration](docs/developer_integration.md)
+- [Development guide](DEVELOPMENT.md)
+- [Roadmap](README_plan.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

@@ -1,30 +1,8 @@
-# Lite Agent Orchestrator
-# 核心依赖：仅需 Python 标准库（Python 3.10+）
-# Core: Python standard library only (Python 3.10+)
-
-# ── 可选依赖（Optional）──
-# 按需安装，缺失时自动降级为纯文本处理或 Mock 模式
-
-# PDF 解析（三选一）
-# pip install pymupdf
-# pip install pdfplumber
-# pip install PyPDF2
-
-# Office 文档
-# pip install python-docx       # DOCX
-# pip install openpyxl           # XLSX
-# pip install python-pptx        # PPTX
-# pip install odfpy              # ODT / ODS / ODP
-
-# 电子书与富文本
-# pip install ebooklib           # EPUB
-# pip install striprtf           # RTF
-
-# 图片 OCR（需额外安装 Tesseract 引擎）
-# pip install Pillow pytesseract
-
-# API 服务（FastAPI 异步服务层）
-# pip install fastapi uvicorn python-multipart
-
-# 开发与测试
-# pip install pytest
+# Core CLI dependencies
+#
+# The CLI pipeline and Mock mode use only the Python standard library.
+# Install optional groups as needed:
+#
+#   pip install -r requirements-api.txt
+#   pip install -r requirements-extras.txt
+#   pip install -r requirements-dev.txt

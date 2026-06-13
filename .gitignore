@@ -3,6 +3,11 @@ __pycache__/
 *.pyc
 *.pyo
 *.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 dist/
 build/
 
@@ -19,6 +24,14 @@ env/
 
 # Environment Variables
 .env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+private_samples/
 
 # Output Files
 outputs/
@@ -31,3 +44,8 @@ test_debug*/
 test_direct/
 test_isolation_*
 test_p1/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak

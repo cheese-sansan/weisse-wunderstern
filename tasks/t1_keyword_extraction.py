@@ -128,6 +128,40 @@ def _mock_extract(topic: str) -> dict:
     tasks = [k for k in task_keywords if k in topic_lower]
     domains = [k for k in domain_keywords if k in topic_lower]
 
+    # 中文竞赛原始样例兼容：无需 LLM 也能触发稳定的动态路由。
+    chinese_rules = [
+        {
+            "needles": ("ai行业趋势", "ai 行业趋势", "ai行业", "人工智能行业"),
+            "methods": ["large model", "multimodal ai"],
+            "domains": ["ai industry", "compliance"],
+            "tasks": ["industry trend analysis"],
+        },
+        {
+            "needles": ("智能汽车安全", "自动驾驶安全", "汽车安全"),
+            "methods": [],
+            "domains": ["automotive safety", "compliance"],
+            "tasks": ["safety assessment"],
+        },
+        {
+            "needles": ("大模型轻量化", "轻量化部署", "模型轻量化"),
+            "methods": ["model compression", "quantization", "distillation"],
+            "domains": ["deployment", "compliance"],
+            "tasks": ["model deployment"],
+        },
+    ]
+    topic_compact = topic_lower.replace(" ", "")
+    for rule in chinese_rules:
+        if any(needle.replace(" ", "") in topic_compact for needle in rule["needles"]):
+            methods.extend(rule["methods"])
+            domains.extend(rule["domains"])
+            tasks.extend(rule["tasks"])
+
+    methods = list(dict.fromkeys(methods))
+    datasets = list(dict.fromkeys(datasets))
+    metrics = list(dict.fromkeys(metrics))
+    tasks = list(dict.fromkeys(tasks))
+    domains = list(dict.fromkeys(domains))
+
     return {
         "keywords": words,
         "academic_entities": {

@@ -7,11 +7,13 @@ StateManager(job_id) 将状态写入 outputs/jobs/{job_id}/task_state.json，
 
 import json
 import os
+import re
 import threading
 from datetime import datetime, timezone, timedelta
 
 BASE_OUTPUT_DIR = "outputs"
 TZ = timezone(timedelta(hours=8))
+JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
 
 def now_iso():
@@ -19,16 +21,45 @@ def now_iso():
     return datetime.now(TZ).isoformat(timespec="seconds")
 
 
+def now_history():
+    """返回原始题目要求的状态历史时间格式。"""
+    return datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def validate_job_id(job_id: str) -> str:
+    """
+    校验并返回规范化后的 job_id。
+
+    job_id 会被用作 outputs/jobs/{job_id} 的目录名，因此只允许短 ASCII
+    标识符，避免路径穿越、绝对路径和跨平台分隔符问题。
+    """
+    if job_id is None:
+        raise ValueError("job_id 不能为空")
+    normalized = str(job_id).strip()
+    if not normalized:
+        raise ValueError("job_id 不能为空")
+    if not JOB_ID_PATTERN.fullmatch(normalized):
+        raise ValueError(
+            "job_id 只能包含英文字母、数字、下划线和连字符，"
+            "必须以字母或数字开头，长度不超过 64"
+        )
+    return normalized
+
+
 class StateManager:
     """Per-job 任务状态管理器。"""
 
+    _locks: dict[str, threading.RLock] = {}
+    _locks_guard = threading.Lock()
+
     def __init__(self, job_id: str):
-        if not job_id or not job_id.strip():
-            raise ValueError("job_id 不能为空")
-        self.job_id = job_id.strip()
+        self.job_id = validate_job_id(job_id)
         self._job_dir = os.path.join(BASE_OUTPUT_DIR, "jobs", self.job_id)
         self._state_file = os.path.join(self._job_dir, "task_state.json")
-        self._lock = threading.RLock()
+        with self._locks_guard:
+            if self.job_id not in self._locks:
+                self._locks[self.job_id] = threading.RLock()
+            self._lock = self._locks[self.job_id]
 
     @property
     def job_dir(self):
@@ -41,59 +72,67 @@ class StateManager:
     def _ensure_dir(self):
         os.makedirs(self._job_dir, exist_ok=True)
 
-    def init_state(self):
-        """初始化 job 状态文件（幂等）。"""
+    def _new_state(self):
+        """构建一个全新的初始状态对象。"""
+        now = now_iso()
+        return {
+            "job_id": self.job_id,
+            "status": "PENDING",
+            "current_task": None,
+            "created_at": now,
+            "updated_at": now,
+            "error": None,
+            "task_list": [
+                {"task_id": tid, "task_name": name, "status": "未开始",
+                 "started_at": None, "finished_at": None, "error": None,
+                 "status_history": [{"status": "未开始", "timestamp": now_history()}]}
+                for tid, name in [
+                    ("T0", "文档内容提取"), ("T1", "关键词提取"),
+                    ("T2", "文献检索"), ("T3", "摘要生成"),
+                    ("T4", "报告框架搭建"),
+                ]
+            ],
+            "artifacts": {},
+        }
+
+    def _write_state_atomic(self, state):
+        """原子写入状态文件，避免读到半截 JSON。"""
+        self._ensure_dir()
+        tmp_file = f"{self._state_file}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, self._state_file)
+
+    def init_state(self, force: bool = False):
+        """初始化 job 状态文件。force=True 时覆盖已有文件。"""
         with self._lock:
             self._ensure_dir()
-            if os.path.exists(self._state_file):
+            if os.path.exists(self._state_file) and not force:
                 return
-            now = now_iso()
-            state = {
-                "job_id": self.job_id,
-                "status": "PENDING",
-                "current_task": None,
-                "created_at": now,
-                "updated_at": now,
-                "error": None,
-                "task_list": [
-                    {"task_id": tid, "task_name": name, "status": "未开始",
-                     "started_at": None, "finished_at": None, "error": None,
-                     "status_history": [{"status": "未开始", "timestamp": now}]}
-                    for tid, name in [
-                        ("T0", "文档内容提取"), ("T1", "关键词提取"),
-                        ("T2", "文献检索"), ("T3", "摘要生成"),
-                        ("T4", "报告框架搭建"),
-                    ]
-                ],
-                "artifacts": {},
-            }
-            with open(self._state_file, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
+            self._write_state_atomic(self._new_state())
 
     def load_state(self):
         """加载当前 job 状态（不存在时初始化）。"""
         with self._lock:
             self.init_state()
-            with open(self._state_file, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if not content:
-                    self.init_state()
-                    with open(self._state_file, "r", encoding="utf-8") as f2:
-                        content = f2.read()
             try:
+                with open(self._state_file, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                if not content:
+                    raise json.JSONDecodeError("empty state file", "", 0)
                 return json.loads(content)
-            except json.JSONDecodeError:
-                self.init_state()
-                with open(self._state_file, "r", encoding="utf-8") as f2:
-                    return json.loads(f2.read())
+            except (json.JSONDecodeError, OSError):
+                self.init_state(force=True)
+                with open(self._state_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
 
     def save_state(self, state):
         """持久化状态。"""
         with self._lock:
             state["updated_at"] = now_iso()
-            self._ensure_dir()
-            with open(self._state_file, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
+            self._write_state_atomic(state)
 
     def update_task_status(self, task_id, new_status):
         """更新指定任务的状态并记录时间戳。"""
@@ -104,7 +143,7 @@ class StateManager:
                     if task["status"] != new_status:
                         task["status"] = new_status
                         task["status_history"].append(
-                            {"status": new_status, "timestamp": now_iso()}
+                            {"status": new_status, "timestamp": now_history()}
                         )
                         if new_status == "进行中":
                             task["started_at"] = now_iso()
@@ -142,7 +181,7 @@ class StateManager:
                     "started_at": None,
                     "finished_at": None,
                     "error": None,
-                    "status_history": [{"status": "未开始", "timestamp": now_iso()}],
+                    "status_history": [{"status": "未开始", "timestamp": now_history()}],
                 })
                 self.save_state(state)
 
@@ -190,4 +229,4 @@ def update_task_status(task_id, new_status, output_dir: str = "outputs"):
 
 
 def now_str():
-    return now_iso()
+    return now_history()

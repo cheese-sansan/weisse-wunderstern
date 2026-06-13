@@ -1,18 +1,15 @@
-FROM python:3.10-slim
+ARG PYTHON_IMAGE=python:3.10-slim
+FROM ${PYTHON_IMAGE}
 
 WORKDIR /app
 
-# 安装可选文档解析依赖（按需启用）
+COPY requirements-api.txt requirements-extras.txt /app/
+
+# 安装 API 依赖；可选文档解析依赖按需启用。
 ARG INSTALL_EXTRAS=false
-RUN if [ "$INSTALL_EXTRAS" = "true" ]; then \
-        pip install --no-cache-dir \
-            pymupdf pdfplumber PyPDF2 \
-            python-docx openpyxl python-pptx \
-            ebooklib striprtf \
-            Pillow pytesseract \
-            fastapi uvicorn python-multipart; \
-    else \
-        pip install --no-cache-dir fastapi uvicorn python-multipart; \
+RUN pip install --no-cache-dir -r requirements-api.txt && \
+    if [ "$INSTALL_EXTRAS" = "true" ]; then \
+        pip install --no-cache-dir -r requirements-extras.txt; \
     fi
 
 COPY . /app

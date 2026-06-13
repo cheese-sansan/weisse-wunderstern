@@ -6,8 +6,6 @@ run_job(job_id, topic, file_path, uploaded_file_path)
 """
 
 import os
-import json
-from datetime import datetime
 
 from utils.logger import get_logger
 from utils.state_manager import StateManager, now_str
@@ -21,6 +19,8 @@ def _jlog(job_id, msg):
     text = f"[Job {job_id}] {msg}"
     print(text)
     log.info(text)
+
+
 from tasks.t0_document_parsing import run as t0_run
 from tasks.t1_keyword_extraction import run as t1_run
 from tasks.t2_literature_search import run as t2_run
@@ -62,6 +62,11 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
     # 确定实际使用的文件路径
     effective_file = file_path or uploaded_file_path
 
+    state = smgr.load_state()
+    if state.get("status") == "COMPLETED":
+        _jlog(job_id, "所有任务已完成，无需重复执行。")
+        return
+
     # 断点续跑
     last_done = smgr.get_last_completed_task()
     _log_resume(last_done, output_dir, job_id)
@@ -74,12 +79,12 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
         idx = TASK_ORDER.index(last_done)
         next_task = TASK_ORDER[idx + 1] if idx + 1 < len(TASK_ORDER) else None
         if next_task is None:
-            print(f"[OK] Job {job_id}: 所有任务已完成，无需重复执行。")
+            _jlog(job_id, "所有任务已完成，无需重复执行。")
             return
 
-    print(f"[Job {job_id}] 主题: {topic if topic else '(待提取)'}")
+    _jlog(job_id, f"主题: {topic if topic else '(待提取)'}")
     if effective_file:
-        print(f"[Job {job_id}] 文件: {effective_file}")
+        _jlog(job_id, f"文件: {effective_file}")
 
     doc_result = None
     t1_output = {}
@@ -90,17 +95,17 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
 
     # ── T0 ──
     if should_run("T0", next_task) and effective_file:
-        print(f"[Job {job_id}] -> T0 文档内容提取...")
+        _jlog(job_id, "-> T0 文档内容提取...")
         smgr.update_task_status("T0", "进行中")
         doc_result = t0_run(effective_file)
         ctx.save("T0", doc_result)
         smgr.update_task_status("T0", "完成")
         meta = doc_result.get("metadata", {})
         text_len = len(doc_result.get("raw_text", ""))
-        print(f"[Job {job_id}] [T0] 文件: {meta.get('file_name')} | 长度: {text_len} 字符")
+        _jlog(job_id, f"[T0] 文件: {meta.get('file_name')} | 长度: {text_len} 字符")
         if doc_result.get("warnings"):
             for w in doc_result["warnings"]:
-                print(f"[Job {job_id}]  [WARNING] {w}")
+                _jlog(job_id, f"[WARNING] {w}")
         if not topic:
             topic = meta.get("file_name", "文档分析")
         next_task = "T1"
@@ -115,25 +120,25 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
 
     # ── T1 ──
     if should_run("T1", next_task):
-        print(f"[Job {job_id}] -> T1 关键词与学术实体提取...")
+        _jlog(job_id, "-> T1 关键词与学术实体提取...")
         smgr.update_task_status("T1", "进行中")
         t1_output = t1_run(topic)
         ctx.save("T1", t1_output)
         smgr.update_task_status("T1", "完成")
         keywords = t1_output.get("keywords", [])
         entities = t1_output.get("academic_entities", {})
-        print(f"[Job {job_id}] [T1] 关键词: {keywords}")
+        _jlog(job_id, f"[T1] 关键词: {keywords}")
         next_task = "T2"
 
     # ── T2 ──
     if should_run("T2", next_task):
-        print(f"[Job {job_id}] -> T2 文献检索...")
+        _jlog(job_id, "-> T2 文献检索...")
         smgr.update_task_status("T2", "进行中")
         t2_output = t2_run(t1_output)
         ctx.save("T2", t2_output)
         smgr.update_task_status("T2", "完成")
         lit_results = t2_output.get("literature_results", [])
-        print(f"[Job {job_id}] [T2] 检索到 {len(lit_results)} 条文献")
+        _jlog(job_id, f"[T2] 检索到 {len(lit_results)} 条文献")
         next_task = "T3"
 
         # 动态路由
@@ -157,14 +162,14 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
                 "status": "未开始",
                 "status_history": [{"status": "未开始", "timestamp": now_str()}],
             })
-            print(f"[Job {job_id}] [动态路由] 追加 T5")
+            _jlog(job_id, "[动态路由] 追加 T5")
         if need_t6 and not has_t6:
             state["task_list"].append({
                 "task_id": "T6", "task_name": "政策影响评估",
                 "status": "未开始",
                 "status_history": [{"status": "未开始", "timestamp": now_str()}],
             })
-            print(f"[Job {job_id}] [动态路由] 追加 T6")
+            _jlog(job_id, "[动态路由] 追加 T6")
         if need_t5 or need_t6:
             smgr.save_state(state)
 
@@ -172,10 +177,10 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
     literature_is_empty = len(lit_results) == 0
     if should_run("T3", next_task):
         if literature_is_empty:
-            print(f"[Job {job_id}] [跳过] T3 文献不足")
+            _jlog(job_id, "[跳过] T3 文献不足")
             next_task = "T4"
         else:
-            print(f"[Job {job_id}] -> T3 审稿反思环路...")
+            _jlog(job_id, "-> T3 审稿反思环路...")
             smgr.update_task_status("T3", "进行中")
             t3_output = t3_run(t2_output, doc_result)
             ctx.save("T3", t3_output)
@@ -183,12 +188,12 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
             summary = t3_output.get("final_report", "")
             critic = t3_output.get("critic_review", {})
             critiques = critic.get("critiques", [])
-            print(f"[Job {job_id}] [T3] Extractor: claims | Critic: {len(critiques)} critiques | Report: {len(summary)} 字符")
+            _jlog(job_id, f"[T3] Extractor: claims | Critic: {len(critiques)} critiques | Report: {len(summary)} 字符")
             next_task = "T4"
 
     # ── T4 ──
     if should_run("T4", next_task):
-        print(f"[Job {job_id}] -> T4 报告框架搭建...")
+        _jlog(job_id, "-> T4 报告框架搭建...")
         smgr.update_task_status("T4", "进行中")
         if literature_is_empty:
             report = "# 报告框架\n\n## 摘要\n文献不足，建议补充检索"
@@ -198,14 +203,14 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
         with open(report_path, "w", encoding="utf-8") as f:
             f.write(report)
         smgr.update_task_status("T4", "完成")
-        print(f"[Job {job_id}] [T4] 报告已保存")
+        _jlog(job_id, "[T4] 报告已保存")
         next_task = "T5"
 
     # ── T5 ──
     if should_run("T5", next_task):
         state = smgr.load_state()
         if any(t["task_id"] == "T5" and t["status"] == "未开始" for t in state["task_list"]):
-            print(f"[Job {job_id}] -> T5 技术案例分析...")
+            _jlog(job_id, "-> T5 技术案例分析...")
             smgr.update_task_status("T5", "进行中")
             ctx.save("T5", f"针对'{topic}'的技术案例分析完成。")
             smgr.update_task_status("T5", "完成")
@@ -215,13 +220,13 @@ def run_job(job_id: str, topic: str = "", file_path: str = None, uploaded_file_p
     if should_run("T6", next_task):
         state = smgr.load_state()
         if any(t["task_id"] == "T6" and t["status"] == "未开始" for t in state["task_list"]):
-            print(f"[Job {job_id}] -> T6 政策影响评估...")
+            _jlog(job_id, "-> T6 政策影响评估...")
             smgr.update_task_status("T6", "进行中")
             ctx.save("T6", f"针对'{topic}'的政策影响评估完成。")
             smgr.update_task_status("T6", "完成")
 
     smgr.set_completed()
-    print(f"[Job {job_id}] 管道执行完毕。")
+    _jlog(job_id, "管道执行完毕。")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -245,7 +250,6 @@ def _ensure_all_tasks(smgr):
     base_tasks = [
         ("T0", "文档内容提取"), ("T1", "关键词提取"), ("T2", "文献检索"),
         ("T3", "摘要生成"), ("T4", "报告框架搭建"),
-        ("T5", "技术案例分析"), ("T6", "政策影响评估"),
     ]
     changed = False
     for tid, name in base_tasks:

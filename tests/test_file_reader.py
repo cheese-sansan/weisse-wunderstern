@@ -2,6 +2,7 @@
 import unittest
 import os
 import tempfile
+import importlib.util
 from utils.file_reader import read_file, _contains_latex, _table_to_markdown
 
 
@@ -65,6 +66,30 @@ class TestFileReader(unittest.TestCase):
             self.assertIsInstance(result["warnings"], list)
             self.assertIn("contains_latex", result)
             self.assertIn("markdown_text", result)
+        finally:
+            os.unlink(tmp)
+
+    @unittest.skipIf(importlib.util.find_spec("docx") is None, "python-docx not installed")
+    def test_read_docx_table_as_markdown_when_dependency_available(self):
+        from docx import Document
+
+        fd, tmp = tempfile.mkstemp(suffix=".docx")
+        os.close(fd)
+        try:
+            doc = Document()
+            doc.add_paragraph("Benchmark Results")
+            table = doc.add_table(rows=2, cols=2)
+            table.cell(0, 0).text = "Model"
+            table.cell(0, 1).text = "Accuracy"
+            table.cell(1, 0).text = "GPT"
+            table.cell(1, 1).text = "86.4"
+            doc.save(tmp)
+
+            result = read_file(tmp)
+            self.assertTrue(result["success"])
+            self.assertIn("Benchmark Results", result["markdown_text"])
+            self.assertIn("| Model | Accuracy |", result["markdown_text"])
+            self.assertIn("| GPT | 86.4 |", result["markdown_text"])
         finally:
             os.unlink(tmp)
 

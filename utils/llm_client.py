@@ -56,12 +56,7 @@ def chat(prompt: str, system_prompt: str = None, temperature: float = 0.7) -> st
             res_json = json.loads(res_body)
             return res_json["choices"][0]["message"]["content"].strip()
     except urllib.error.HTTPError as e:
-        err_msg = ""
-        try:
-            err_msg = e.read().decode("utf-8")
-        except Exception:
-            pass
-        log.warning("LLM 请求失败 (HTTPError %s): %s。细节: %s", e.code, e.reason, err_msg)
+        log.warning("LLM 请求失败 (HTTPError %s): %s", e.code, e.reason)
     except Exception as e:
         log.warning("LLM 请求时发生异常: %s", e)
 

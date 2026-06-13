@@ -8,6 +8,8 @@ import json
 import os
 import threading
 
+from utils.state_manager import validate_job_id
+
 BASE_OUTPUT_DIR = "outputs"
 
 # 建议语义键名映射
@@ -25,16 +27,30 @@ CONTEXT_KEYS = {
 class ContextStore:
     """Per-job 上下文存储。"""
 
+    _locks: dict[str, threading.RLock] = {}
+    _locks_guard = threading.Lock()
+
     def __init__(self, job_id: str):
-        if not job_id or not job_id.strip():
-            raise ValueError("job_id 不能为空")
-        self.job_id = job_id.strip()
+        self.job_id = validate_job_id(job_id)
         self._job_dir = os.path.join(BASE_OUTPUT_DIR, "jobs", self.job_id)
         self._ctx_file = os.path.join(self._job_dir, "context_data.json")
-        self._lock = threading.RLock()
+        with self._locks_guard:
+            if self.job_id not in self._locks:
+                self._locks[self.job_id] = threading.RLock()
+            self._lock = self._locks[self.job_id]
 
     def _ensure_dir(self):
         os.makedirs(self._job_dir, exist_ok=True)
+
+    def _write_context_atomic(self, ctx):
+        """原子写入上下文 JSON，避免并发读取半截内容。"""
+        self._ensure_dir()
+        tmp_file = f"{self._ctx_file}.tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
+            json.dump(ctx, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_file, self._ctx_file)
 
     def save(self, key: str, data):
         """保存一个键的上下文产物。key 可为 task_id（如 'T1'）或语义键名。"""
@@ -45,11 +61,10 @@ class ContextStore:
                 try:
                     with open(self._ctx_file, "r", encoding="utf-8") as f:
                         ctx = json.load(f)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, OSError):
                     pass
             ctx[key] = {"result": data}
-            with open(self._ctx_file, "w", encoding="utf-8") as f:
-                json.dump(ctx, f, ensure_ascii=False, indent=2)
+            self._write_context_atomic(ctx)
 
     def load(self, key: str):
         """加载指定键的上下文产物。"""

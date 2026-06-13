@@ -47,7 +47,8 @@ def start_server():
     """启动 API 服务子进程。"""
     proc = subprocess.Popen(
         [sys.executable, str(PROJECT_ROOT / "main_api.py")],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         cwd=str(PROJECT_ROOT),
     )
     # 等待服务就绪
@@ -129,6 +130,67 @@ def test_submit_file_upload():
     finally:
         import os
         os.unlink(tmp)
+
+
+def test_invalid_requests():
+    global FAILED
+    print("\n=== Test: Invalid requests ===")
+
+    status, data = api_request("GET", "/api/v1/jobs/status/bad.job")
+    if status == 400:
+        print("[OK] Invalid job_id rejected")
+    else:
+        print(f"[FAIL] Invalid job_id: {status} {data}")
+        FAILED += 1
+
+    status, data = api_request("GET", "/api/v1/jobs/status/not_found_job")
+    if status == 404:
+        print("[OK] Missing valid job returns 404")
+    else:
+        print(f"[FAIL] Missing job: {status} {data}")
+        FAILED += 1
+
+    body = urllib.parse.urlencode({"topic": ""}).encode("utf-8")
+    status, data = api_request("POST", "/api/v1/jobs/submit", data=body)
+    if status == 400:
+        print("[OK] Empty submit rejected")
+    else:
+        print(f"[FAIL] Empty submit: {status} {data}")
+        FAILED += 1
+
+    boundary = "----InvalidUploadBoundary"
+    parts = [
+        f"--{boundary}".encode(),
+        b'Content-Disposition: form-data; name="topic"',
+        b"",
+        b"Invalid upload",
+        f"--{boundary}".encode(),
+        b'Content-Disposition: form-data; name="file"; filename="payload.exe"',
+        b"Content-Type: application/octet-stream",
+        b"",
+        b"not allowed",
+        f"--{boundary}--".encode(),
+    ]
+    body_bytes = b"\r\n".join(parts)
+    req = urllib.request.Request(
+        f"{BASE_URL}/api/v1/jobs/submit",
+        data=body_bytes,
+        method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            status = resp.status
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        status = e.code
+        data = json.loads(e.read().decode("utf-8"))
+
+    if status == 400:
+        print("[OK] Unsupported upload extension rejected")
+    else:
+        print(f"[FAIL] Unsupported extension: {status} {data}")
+        FAILED += 1
 
 
 def test_status(job_id):
@@ -229,6 +291,7 @@ if __name__ == "__main__":
 
     try:
         test_health()
+        test_invalid_requests()
 
         # Test 1: topic-only submit + poll + result
         job_id = test_submit_topic_only()

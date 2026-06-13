@@ -34,6 +34,24 @@ class TestT1Schema(unittest.TestCase):
         domains = result["academic_entities"]["domains"]
         self.assertIn("nlp", domains)
 
+    def test_mock_detects_original_chinese_ai_trend(self):
+        result = run("2025 Q3 AI行业趋势")
+        entities = result["academic_entities"]
+        self.assertIn("large model", entities["methods"])
+        self.assertIn("compliance", entities["domains"])
+
+    def test_mock_detects_original_chinese_car_safety(self):
+        result = run("智能汽车安全技术进展")
+        entities = result["academic_entities"]
+        self.assertEqual(entities["methods"], [])
+        self.assertIn("compliance", entities["domains"])
+
+    def test_mock_detects_original_chinese_llm_deployment(self):
+        result = run("大模型轻量化部署方案")
+        entities = result["academic_entities"]
+        self.assertIn("model compression", entities["methods"])
+        self.assertIn("compliance", entities["domains"])
+
     def test_normalize_empty(self):
         normalized = _normalize({})
         self.assertIn("keywords", normalized)

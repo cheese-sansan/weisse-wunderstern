@@ -35,8 +35,13 @@ if __name__ == "__main__":
     parser.add_argument("--topic", "-t", default="", help="研究主题")
     parser.add_argument("--file", "-f", default=None, help="外部文件路径（支持 TXT/MD/JSON/PDF/DOCX）")
     parser.add_argument("--output", "-o", default="outputs", help="job_id / 输出目录名（默认: outputs）")
+    parser.add_argument("--tui", action="store_true", help="启动标准库 TUI")
 
     args = parser.parse_args()
+
+    if args.tui:
+        from main_tui import run_tui
+        sys.exit(run_tui())
 
     if not args.topic and not args.file:
         parser.print_help()
