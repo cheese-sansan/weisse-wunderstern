@@ -1,6 +1,6 @@
 # Developer Integration
 
-Lite Agent Orchestrator can be embedded as a small Python library.
+Weisse Wunderstern can be embedded as a small Python library.
 
 ## Run A Job
 

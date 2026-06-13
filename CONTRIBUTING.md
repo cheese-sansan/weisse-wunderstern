@@ -1,12 +1,12 @@
 # Contributing
 
-Thank you for considering a contribution to Lite Agent Orchestrator.
+Thank you for considering a contribution to Weisse Wunderstern.
 
 ## Setup
 
 ```bash
-git clone <repo-url>
-cd lite-agent-orchestrator
+git clone https://github.com/cheese-sansan/weisse-wunderstern.git
+cd weisse-wunderstern
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip

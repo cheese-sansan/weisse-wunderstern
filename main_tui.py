@@ -1,5 +1,5 @@
 """
-Lite Agent Orchestrator — zero-dependency TUI.
+Weisse Wunderstern — zero-dependency TUI.
 
 This is an intentionally small text UI built with the Python standard library.
 It is meant for local use and smoke testing, not as a full-screen terminal app.
@@ -40,7 +40,7 @@ def _prompt(label: str, default: str = "", input_func=input) -> str:
 
 def _print_header(print_func=print):
     print_func("=" * 58)
-    print_func(" Lite Agent Orchestrator TUI")
+    print_func(" Weisse Wunderstern TUI")
     print_func(" Lightweight document distillation and report analysis")
     print_func("=" * 58)
 
@@ -197,7 +197,7 @@ def run_tui(input_func=input, print_func=print):
 
 def main(argv=None):
     _configure_stdio()
-    parser = argparse.ArgumentParser(description="Lite Agent Orchestrator TUI")
+    parser = argparse.ArgumentParser(description="Weisse Wunderstern TUI")
     parser.add_argument("--topic", default="", help="Run one topic analysis and exit")
     parser.add_argument("--file", default=None, help="Run one file analysis and exit")
     parser.add_argument("--job-id", default="", help="Job id for one-shot analysis")

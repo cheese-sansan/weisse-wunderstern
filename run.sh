@@ -1,7 +1,7 @@
 #!/bin/bash
 echo "========================================"
-echo " Lite Agent Orchestrator"
-echo " Academic Distillation Engine"
+echo " Weisse Wunderstern"
+echo " Text Report Analysis Service"
 echo "========================================"
 echo " MODE: ${MODE:-cli}"
 echo "========================================"

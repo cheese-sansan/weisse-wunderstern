@@ -1,6 +1,6 @@
 # Roadmap And Release Checklist
 
-This file records the current public roadmap for Lite Agent Orchestrator. It intentionally avoids local-only documents, private sample names, and development-chat history.
+This file records the current public roadmap for Weisse Wunderstern. It intentionally avoids local-only documents, private sample names, and development-chat history.
 
 ## Current Status
 

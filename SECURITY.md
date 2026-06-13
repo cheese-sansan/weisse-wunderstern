@@ -1,6 +1,6 @@
 # Security Policy
 
-Lite Agent Orchestrator is a lightweight local tool and standalone API service. It is not yet a hardened multi-tenant hosted platform.
+Weisse Wunderstern is a lightweight local tool and standalone API service. It is not yet a hardened multi-tenant hosted platform.
 
 ## Supported Versions
 

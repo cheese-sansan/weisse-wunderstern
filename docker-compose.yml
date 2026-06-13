@@ -1,3 +1,5 @@
+name: weisse-wunderstern
+
 services:
   api:
     build:
@@ -5,7 +7,7 @@ services:
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.10-slim}
         INSTALL_EXTRAS: ${INSTALL_EXTRAS:-false}
-    container_name: lite-agent-api
+    container_name: weisse-wunderstern-api
     ports:
       - "${API_PORT:-8000}:8000"
     environment:

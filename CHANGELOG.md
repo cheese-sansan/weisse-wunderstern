@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Lite Agent Orchestrator are documented here.
+All notable changes to Weisse Wunderstern are documented here.
 
 ## Unreleased
 

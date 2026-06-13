@@ -1,5 +1,5 @@
 """
-Lite Agent Orchestrator — CLI 入口
+Weisse Wunderstern — CLI 入口
 
 轻量级智能体任务编排引擎，支持：
 - 多任务顺序/动态编排
@@ -22,7 +22,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Lite Agent Orchestrator - 零依赖轻量级智能体编排引擎",
+        description="Weisse Wunderstern - zero-dependency text report analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -49,7 +49,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print("=" * 50)
-    print(" Lite Agent Orchestrator")
+    print(" Weisse Wunderstern")
     print(" 零依赖轻量级智能体编排引擎")
     print("=" * 50)
     print()

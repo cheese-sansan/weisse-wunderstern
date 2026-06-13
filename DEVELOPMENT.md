@@ -1,6 +1,6 @@
 # Development Guide
 
-This document describes the public architecture and development workflow for Lite Agent Orchestrator.
+This document describes the public architecture and development workflow for Weisse Wunderstern.
 
 ## Architecture
 

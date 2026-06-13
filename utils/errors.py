@@ -2,7 +2,7 @@
 
 
 class LiteAgentError(Exception):
-    """所有 Lite Agent Orchestrator 异常的基类。"""
+    """所有 Weisse Wunderstern 异常的基类。"""
 
 
 class DocumentParseError(LiteAgentError):

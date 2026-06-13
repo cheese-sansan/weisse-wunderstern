@@ -1,5 +1,5 @@
 """
-Lite Agent Orchestrator — FastAPI 异步服务入口
+Weisse Wunderstern — FastAPI 异步服务入口
 
 端点：
   POST /api/v1/jobs/submit       提交任务（可选上传文件 + topic）
@@ -36,7 +36,7 @@ log = get_logger(__name__)
 load_env()
 
 app = FastAPI(
-    title="Lite Agent Orchestrator API",
+    title="Weisse Wunderstern API",
     version="0.4.0",
     description="学术文献提炼引擎 — 提交-轮询-获取结果接口",
 )
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("API_PORT", "8000"))
     _schedule_cleanup()
     auth_status = "已启用" if API_TOKEN else "未启用（公开访问）"
-    print(f"启动 Lite Agent Orchestrator API 服务 (端口 {port})...")
+    print(f"启动 Weisse Wunderstern API 服务 (端口 {port})...")
     print(f"API 鉴权: {auth_status}")
     print(f"上传限制: {MAX_UPLOAD_SIZE_MB}MB, 允许类型: {len(ALLOWED_EXTENSIONS)} 种")
     uvicorn.run("main_api:app", host="0.0.0.0", port=port, reload=False)
