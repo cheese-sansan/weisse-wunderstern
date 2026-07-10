@@ -1,76 +1,130 @@
-"""
-报告框架生成任务模块
+"""T4: assemble the final evidence-aware Markdown report."""
 
-支持双模式运行：
-- LLM增强模式：通过大语言模型生成完整的Markdown研究报告框架
-- Mock回退模式：基于预设模板生成标准报告结构
-"""
+from __future__ import annotations
 
 
-def run(topic: str, summary: str) -> str:
-  """
-  根据主题和摘要生成Markdown格式的研究报告框架。
+def run(topic: str, t3_output, t5_output: dict | None = None,
+        t6_output: dict | None = None, sources: list[dict] | None = None,
+        warnings: list[str] | None = None) -> str:
+    if isinstance(t3_output, str):
+        t3_output = {"final_report": t3_output}
+    t3_output = t3_output if isinstance(t3_output, dict) else {}
+    t5_output = t5_output if isinstance(t5_output, dict) else {}
+    t6_output = t6_output if isinstance(t6_output, dict) else {}
+    sources = list(sources or [])
+    warnings = _deduplicate(list(warnings or []))
 
-  优先使用LLM模式生成包含多个章节的完整报告框架，若LLM不可用，
-  则回退到基于模板的Mock模式。
+    lines = [f"# {topic} 研究报告", "", _mode_banner(sources), ""]
+    lines.extend(["## 学术提炼", ""])
+    summary = str(t3_output.get("final_report", "")).strip()
+    lines.append(summary or "证据不足，无法形成可验证的学术提炼结论。")
+    lines.extend(["", "## 技术案例", ""])
+    lines.extend(_render_cases(t5_output.get("cases", [])))
+    lines.extend(["", "## 政策影响", ""])
+    lines.extend(_render_policies(t6_output.get("policies", [])))
+    lines.extend(["", "## 数据来源", ""])
+    lines.extend(_render_sources(sources))
 
-  参数:
-    topic: 研究主题
-    summary: 综述摘要
-
-  返回:
-    str: Markdown格式的研究报告框架
-  """
-  # --- LLM增强模式 ---
-  try:
-    from utils.llm_client import chat
-
-    system_prompt = (
-      "你是一个专业的研究报告撰写助手。请根据主题和摘要，"
-      "生成一个完整的Markdown格式研究报告框架，包含标题、摘要、"
-      "至少4个主要章节（每个章节包含2-3个子节），以及结论和参考文献章节。"
+    all_warnings = _deduplicate(
+        warnings
+        + list(t3_output.get("warnings", []))
+        + list(t5_output.get("warnings", []))
+        + list(t6_output.get("warnings", []))
     )
-    prompt = (
-      f"请根据以下信息生成研究报告框架：\n\n"
-      f"研究主题：{topic}\n\n"
-      f"综述摘要：{summary}"
-    )
+    if all_warnings:
+        lines.extend(["", "## 告警与边界", ""])
+        lines.extend(f"- {warning}" for warning in all_warnings)
+    lines.extend([
+        "",
+        "> 本报告由自动化流水线生成。LLM 推断、模拟数据及未验证信息均已单独标记；重要结论必须回查原始来源。",
+        "",
+    ])
+    return "\n".join(lines)
 
-    result = chat(prompt, system_prompt=system_prompt, temperature=0.7)
 
-    if result is not None:
-      return result
-  except ImportError:
-    # llm_client模块不可用，回退到Mock模式
-    pass
+def _mode_banner(sources: list[dict]) -> str:
+    types = {str(item.get("source_type", "unverified")) for item in sources}
+    if "simulated" in types and "external_api" in types:
+        mode = "混合来源（真实检索 + 模拟数据）"
+    elif "simulated" in types and "source_document" in types:
+        mode = "混合来源（原始文档 + 模拟数据）"
+    elif "simulated" in types:
+        mode = "显式模拟模式"
+    elif "external_api" in types:
+        mode = "真实外部检索"
+    elif "source_document" in types:
+        mode = "原始文档分析"
+    else:
+        mode = "证据不足"
+    return f"> 数据模式：**{mode}**"
 
-  # --- Mock回退模式 ---
-  # 使用预设模板生成标准报告框架
-  lines = [
-    f"# {topic} 研究报告",
-    "",
-    "## 摘要",
-    summary,
-    "",
-    "## 1. 研究背景与意义",
-    "### 1.1 研究背景",
-    "### 1.2 研究意义",
-    "",
-    "## 2. 核心技术进展",
-    "### 2.1 关键技术分析",
-    "### 2.2 技术趋势展望",
-    "",
-    "## 3. 应用场景分析",
-    "### 3.1 典型应用案例",
-    "### 3.2 行业影响评估",
-    "",
-    "## 4. 市场与竞争格局",
-    "### 4.1 市场规模分析",
-    "### 4.2 主要参与者对比",
-    "",
-    "## 5. 结论与展望",
-    "",
-    "## 参考文献",
-    "",
-  ]
-  return "\n".join(lines)
+
+def _render_cases(cases) -> list[str]:
+    if not isinstance(cases, list) or not cases:
+        return ["未提取到具有可追溯证据的技术案例。"]
+    lines = []
+    for index, case in enumerate(cases, 1):
+        refs = ", ".join(f"[{item}]" for item in case.get("evidence_ids", [])) or "无"
+        lines.extend([
+            f"### {index}. {case.get('case_name', '未命名案例')}", "",
+            f"- 使用场景：{case.get('use_scenario') or '未提供'}",
+            f"- 技术路线：{case.get('technical_route') or '未提供'}",
+            f"- 输入：{_join(case.get('inputs'))}",
+            f"- 输出：{_join(case.get('outputs'))}",
+            f"- 实施条件：{_join(case.get('implementation_conditions'))}",
+            f"- 限制：{_join(case.get('limitations'))}",
+            f"- 证据：{refs}；状态：{case.get('verification_status', 'unverified')}", "",
+        ])
+    return lines[:-1]
+
+
+def _render_policies(policies) -> list[str]:
+    if not isinstance(policies, list) or not policies:
+        return ["未发现可引用的权威政策记录；本报告不生成事实性政策结论。"]
+    lines = []
+    for index, policy in enumerate(policies, 1):
+        refs = ", ".join(f"[{item}]" for item in policy.get("evidence_ids", [])) or "无"
+        lines.extend([
+            f"### {index}. {policy.get('policy_name', '未命名政策')}", "",
+            f"- 发布机构：{policy.get('issuing_body') or '未提供'}",
+            f"- 生效时间：{policy.get('effective_date') or '未提供'}",
+            f"- 适用范围：{policy.get('scope') or '未提供'}",
+            f"- 影响对象：{_join(policy.get('affected_parties'))}",
+            f"- 合规要求：{_join(policy.get('compliance_requirements'))}",
+            f"- 风险等级：{policy.get('risk_level', 'unknown')}",
+            f"- 证据：{refs}；状态：{policy.get('verification_status', 'unverified')}", "",
+        ])
+    return lines[:-1]
+
+
+def _render_sources(sources: list[dict]) -> list[str]:
+    if not sources:
+        return ["- 无可用来源。"]
+    lines = []
+    for source in sources:
+        source_id = source.get("source_id", "?")
+        title = source.get("title", "Unknown")
+        provider = source.get("source_provider", "unknown")
+        source_type = source.get("source_type", "unverified")
+        doi = source.get("doi")
+        url = source.get("url")
+        suffix = f" DOI: {doi}." if doi else ""
+        if url:
+            suffix += f" {url}"
+        lines.append(f"- [{source_id}] {title} — {provider}/{source_type}.{suffix}".rstrip())
+    return lines
+
+
+def _join(value) -> str:
+    if isinstance(value, list):
+        return "；".join(str(item) for item in value if str(item).strip()) or "未提供"
+    return str(value or "未提供")
+
+
+def _deduplicate(values: list) -> list[str]:
+    result = []
+    for value in values:
+        text = str(value).strip()
+        if text and text not in result:
+            result.append(text)
+    return result

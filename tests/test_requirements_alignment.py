@@ -24,7 +24,7 @@ class TestProjectRequirementsAlignment(unittest.TestCase):
         job_dir = os.path.join("outputs", "jobs", job_id)
         if os.path.exists(job_dir):
             shutil.rmtree(job_dir)
-        run_job(job_id, topic=topic)
+        run_job(job_id, topic=topic, provider="mock")
         state = StateManager(job_id).load_state()
         return {task["task_id"] for task in state["task_list"]}
 

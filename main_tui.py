@@ -1,5 +1,5 @@
 """
-Weisse Wunderstern — zero-dependency TUI.
+NoteForge — zero-dependency TUI.
 
 This is an intentionally small text UI built with the Python standard library.
 It is meant for local use and smoke testing, not as a full-screen terminal app.
@@ -14,6 +14,7 @@ from datetime import datetime
 from utils.env_loader import load_env
 from utils.state_manager import StateManager, validate_job_id
 from core.pipeline import run_job, PipelineError
+from tasks.t2_literature_search import DEFAULT_PROVIDER, PROVIDER_NAMES
 
 
 JOBS_DIR = os.path.join("outputs", "jobs")
@@ -40,7 +41,7 @@ def _prompt(label: str, default: str = "", input_func=input) -> str:
 
 def _print_header(print_func=print):
     print_func("=" * 58)
-    print_func(" Weisse Wunderstern TUI")
+    print_func(" NoteForge TUI")
     print_func(" Lightweight document distillation and report analysis")
     print_func("=" * 58)
 
@@ -101,7 +102,9 @@ def print_jobs(print_func=print):
 
 def read_report(job_id: str) -> str:
     job_id = validate_job_id(job_id)
-    report_path = os.path.join(JOBS_DIR, job_id, "report_framework.md")
+    report_path = os.path.join(JOBS_DIR, job_id, "report.md")
+    if not os.path.exists(report_path):
+        report_path = os.path.join(JOBS_DIR, job_id, "report_framework.md")
     if not os.path.exists(report_path):
         return ""
     with open(report_path, "r", encoding="utf-8") as f:
@@ -127,7 +130,8 @@ def print_report(job_id: str, max_chars: int = 4000, print_func=print):
         print_func(report)
 
 
-def _run_analysis(topic: str = "", file_path: str = None, job_id: str = "", print_func=print) -> bool:
+def _run_analysis(topic: str = "", file_path: str = None, job_id: str = "",
+                  provider: str | None = None, print_func=print) -> bool:
     try:
         job_id = validate_job_id(job_id or _default_job_id())
     except ValueError as e:
@@ -139,10 +143,10 @@ def _run_analysis(topic: str = "", file_path: str = None, job_id: str = "", prin
         return False
 
     try:
-        run_job(job_id, topic=topic, file_path=file_path)
+        run_job(job_id, topic=topic, file_path=file_path, provider=provider)
         print_func("")
         print_func(f"Done. job_id={job_id}")
-        print_func(f"Report: {os.path.join(JOBS_DIR, job_id, 'report_framework.md')}")
+        print_func(f"Report: {os.path.join(JOBS_DIR, job_id, 'report.md')}")
         return True
     except PipelineError as e:
         print_func(f"Pipeline error: {e}")
@@ -164,18 +168,31 @@ def run_tui(input_func=input, print_func=print):
         if choice == "1":
             topic = _prompt("Topic", input_func=input_func)
             job_id = _prompt("Job ID", _default_job_id("topic"), input_func=input_func)
+            provider = _prompt(
+                "Provider (crossref/mock/llm-simulated)",
+                os.environ.get("LITERATURE_PROVIDER", DEFAULT_PROVIDER),
+                input_func=input_func,
+            )
             if not topic:
                 print_func("Topic is required.")
                 continue
-            _run_analysis(topic=topic, job_id=job_id, print_func=print_func)
+            _run_analysis(topic=topic, job_id=job_id, provider=provider, print_func=print_func)
         elif choice == "2":
             file_path = _prompt("File path", input_func=input_func)
             topic = _prompt("Optional topic", input_func=input_func)
             job_id = _prompt("Job ID", _default_job_id("file"), input_func=input_func)
+            provider = _prompt(
+                "Provider (crossref/mock/llm-simulated)",
+                os.environ.get("LITERATURE_PROVIDER", DEFAULT_PROVIDER),
+                input_func=input_func,
+            )
             if not file_path:
                 print_func("File path is required.")
                 continue
-            _run_analysis(topic=topic, file_path=file_path, job_id=job_id, print_func=print_func)
+            _run_analysis(
+                topic=topic, file_path=file_path, job_id=job_id,
+                provider=provider, print_func=print_func,
+            )
         elif choice == "3":
             print_jobs(print_func)
         elif choice == "4":
@@ -197,10 +214,11 @@ def run_tui(input_func=input, print_func=print):
 
 def main(argv=None):
     _configure_stdio()
-    parser = argparse.ArgumentParser(description="Weisse Wunderstern TUI")
+    parser = argparse.ArgumentParser(description="NoteForge TUI")
     parser.add_argument("--topic", default="", help="Run one topic analysis and exit")
     parser.add_argument("--file", default=None, help="Run one file analysis and exit")
     parser.add_argument("--job-id", default="", help="Job id for one-shot analysis")
+    parser.add_argument("--provider", choices=PROVIDER_NAMES, default=None, help="Literature provider")
     parser.add_argument("--list", action="store_true", help="List recent jobs and exit")
     parser.add_argument("--report", default="", help="Print report for a job and exit")
     args = parser.parse_args(argv)
@@ -212,7 +230,10 @@ def main(argv=None):
         print_report(args.report)
         return 0
     if args.topic or args.file:
-        ok = _run_analysis(topic=args.topic, file_path=args.file, job_id=args.job_id)
+        ok = _run_analysis(
+            topic=args.topic, file_path=args.file, job_id=args.job_id,
+            provider=args.provider,
+        )
         return 0 if ok else 1
     return run_tui()
 

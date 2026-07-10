@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible problem in Weisse Wunderstern
+about: Report a reproducible problem in NoteForge
 title: "[Bug]: "
 labels: bug
 assignees: ""

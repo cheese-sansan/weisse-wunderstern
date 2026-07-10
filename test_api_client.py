@@ -7,6 +7,7 @@ API smoke test — 使用标准库 urllib 验证 FastAPI 三端点。
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -50,6 +51,7 @@ def start_server():
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         cwd=str(PROJECT_ROOT),
+        env={**os.environ, "LITERATURE_PROVIDER": "mock", "PYTHONIOENCODING": "utf-8"},
     )
     # 等待服务就绪
     for _ in range(30):
@@ -78,7 +80,7 @@ def test_submit_topic_only():
     print("\n=== Test: Submit topic-only ===")
     body = urllib.parse.urlencode({"topic": "AI safety"}).encode("utf-8")
     status, data = api_request("POST", "/api/v1/jobs/submit", data=body)
-    if status == 202 and "job_id" in data:
+    if status == 202 and "job_id" in data and data.get("provider") == "mock":
         print(f"[OK] Job created: {data['job_id']}")
         return data["job_id"]
     else:
@@ -158,6 +160,14 @@ def test_invalid_requests():
         print(f"[FAIL] Empty submit: {status} {data}")
         FAILED += 1
 
+    body = urllib.parse.urlencode({"topic": "AI", "provider": "unknown"}).encode("utf-8")
+    status, data = api_request("POST", "/api/v1/jobs/submit", data=body)
+    if status == 400:
+        print("[OK] Unknown provider rejected")
+    else:
+        print(f"[FAIL] Unknown provider: {status} {data}")
+        FAILED += 1
+
     boundary = "----InvalidUploadBoundary"
     parts = [
         f"--{boundary}".encode(),
@@ -227,6 +237,11 @@ def test_result(job_id):
         summary = data.get("context_summary", {})
         print(f"[OK] Result: report={report_len} chars, context_keys={summary.get('keys', [])}")
         assert report_len > 0, "Report should not be empty"
+        assert data.get("provider_status", {}).get("provider") == "mock"
+        assert isinstance(data.get("sources"), list)
+        assert isinstance(data.get("tech_cases"), list)
+        assert isinstance(data.get("policy_assessment"), list)
+        assert isinstance(data.get("warnings"), list)
     elif status == 409:
         print(f"[WARN] Job not complete yet: {data.get('detail')}")
     else:

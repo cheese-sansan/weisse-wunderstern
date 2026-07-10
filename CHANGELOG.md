@@ -1,10 +1,32 @@
 # Changelog
 
-All notable changes to Weisse Wunderstern are documented here.
+All notable changes to NoteForge are documented here.
 
 ## Unreleased
 
 No unreleased changes yet.
+
+## v0.2.0 - 2026-07-10
+
+### Added
+
+- Real Crossref literature retrieval with bounded retry and no required API key.
+- Explicit `crossref`, `mock`, and `llm-simulated` provider selection across CLI, TUI, API, and SDK.
+- Source registry, provider status, retrieval warnings, and evidence-aware claim records.
+- Structured T5 technical cases and strict T6 policy evidence assessment.
+- Canonical `report.md`, real-provider sample output, and Mock-versus-real documentation.
+
+### Changed
+
+- Crossref is the default provider; model credentials no longer select a literature source.
+- Provider failures complete with empty evidence and warnings instead of simulated fallback.
+- T5/T6 run before T4 so dynamic analysis is included in the final report.
+- Resume logic reloads completed context before rebuilding downstream artifacts.
+- FastAPI and public release version are aligned to `0.2.0`.
+
+### Compatibility
+
+- `report_framework.md`, existing API result fields, and legacy custom-provider record fields remain available during v0.2.
 
 ## v0.1.0 - 2026-06-14
 

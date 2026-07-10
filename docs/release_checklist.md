@@ -1,13 +1,11 @@
 # Release Checklist
 
-Use this checklist before publishing a tagged release.
-
 ## Before Tagging
 
-- Confirm `main` is the intended release branch.
-- Confirm `README.md`, `README_plan.md`, `CHANGELOG.md`, `SECURITY.md`, and `CONTRIBUTING.md` are current.
-- Confirm no private documents, generated reports, `.env` files, cache files, or credentials are tracked.
-- Confirm simulated literature output is still labeled as simulated.
+- Confirm `main` is the intended release branch and all v0.2 changes are reviewed.
+- Confirm no `.env`, generated jobs, private documents, credentials, caches, or local samples are staged.
+- Confirm real, document, inferred, simulated, and unverified data remain distinguishable.
+- Confirm `core.version`, FastAPI, Changelog, README, and release notes all identify `0.2.0`.
 
 ## Validation
 
@@ -21,31 +19,21 @@ docker compose config
 docker compose build api
 ```
 
-Optional extras build:
+Run one opt-in real retrieval check separately from deterministic CI:
 
-```powershell
-$env:INSTALL_EXTRAS="true"
-docker compose build api
+```bash
+python main.py --topic "transformer model evaluation" --provider crossref --output release_crossref_check
 ```
+
+Verify the report lists `crossref/external_api`, contains no automatic simulated fallback, and handles missing abstracts without fabricated findings.
 
 ## Tagging
 
 ```bash
 git checkout main
 git pull --ff-only
-git tag -a v0.1.0 -m "Weisse Wunderstern v0.1.0"
-git push origin v0.1.0
+git tag -a v0.2.0 -m "NoteForge v0.2.0"
+git push origin v0.2.0
 ```
 
-## GitHub Release
-
-- Use `docs/releases/v0.1.0.md` as the initial release notes.
-- Mark the release as a public prototype.
-- Do not upload local generated outputs as release assets.
-- Confirm CI passes after publishing the tag.
-
-## After Release
-
-- Move completed items from `README_plan.md` into `CHANGELOG.md`.
-- Open issues for the next roadmap items.
-- Keep default branch protection lightweight until the project has active contributors.
+Use `docs/releases/v0.2.0.md` as the GitHub release notes. Do not upload generated jobs as release assets.

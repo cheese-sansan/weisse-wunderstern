@@ -88,8 +88,8 @@ class StateManager:
                  "status_history": [{"status": "未开始", "timestamp": now_history()}]}
                 for tid, name in [
                     ("T0", "文档内容提取"), ("T1", "关键词提取"),
-                    ("T2", "文献检索"), ("T3", "摘要生成"),
-                    ("T4", "报告框架搭建"),
+                    ("T2", "文献检索"), ("T3", "学术提炼"),
+                    ("T4", "最终报告生成"),
                 ]
             ],
             "artifacts": {},

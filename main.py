@@ -1,5 +1,5 @@
 """
-Weisse Wunderstern — CLI 入口
+NoteForge — CLI 入口
 
 轻量级智能体任务编排引擎，支持：
 - 多任务顺序/动态编排
@@ -14,6 +14,7 @@ import sys
 
 from utils.env_loader import load_env
 from core.pipeline import run_job, PipelineError
+from tasks.t2_literature_search import PROVIDER_NAMES
 
 load_env()
 
@@ -22,7 +23,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Weisse Wunderstern - zero-dependency text report analysis",
+        description="NoteForge - zero-dependency text report analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -35,6 +36,10 @@ if __name__ == "__main__":
     parser.add_argument("--topic", "-t", default="", help="研究主题")
     parser.add_argument("--file", "-f", default=None, help="外部文件路径（支持 TXT/MD/JSON/PDF/DOCX）")
     parser.add_argument("--output", "-o", default="outputs", help="job_id / 输出目录名（默认: outputs）")
+    parser.add_argument(
+        "--provider", choices=PROVIDER_NAMES, default=None,
+        help="文献 Provider（默认读取 LITERATURE_PROVIDER，未配置时为 crossref）",
+    )
     parser.add_argument("--tui", action="store_true", help="启动标准库 TUI")
 
     args = parser.parse_args()
@@ -49,7 +54,7 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print("=" * 50)
-    print(" Weisse Wunderstern")
+    print(" NoteForge")
     print(" 零依赖轻量级智能体编排引擎")
     print("=" * 50)
     print()
@@ -57,7 +62,7 @@ if __name__ == "__main__":
     job_id = os.path.basename(args.output.rstrip("/\\"))
 
     try:
-        run_job(job_id, topic=args.topic, file_path=args.file)
+        run_job(job_id, topic=args.topic, file_path=args.file, provider=args.provider)
     except PipelineError as e:
         print(f"[ERROR] {e}")
         sys.exit(1)

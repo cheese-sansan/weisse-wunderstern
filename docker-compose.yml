@@ -1,4 +1,4 @@
-name: weisse-wunderstern
+name: noteforge
 
 services:
   api:
@@ -7,7 +7,7 @@ services:
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.10-slim}
         INSTALL_EXTRAS: ${INSTALL_EXTRAS:-false}
-    container_name: weisse-wunderstern-api
+    container_name: noteforge-api
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
@@ -18,6 +18,11 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_API_BASE=${OPENAI_API_BASE:-https://api.deepseek.com/v1}
       - LLM_MODEL=${LLM_MODEL:-deepseek-chat}
+      # 文献检索配置
+      - LITERATURE_PROVIDER=${LITERATURE_PROVIDER:-crossref}
+      - LITERATURE_MAX_RESULTS=${LITERATURE_MAX_RESULTS:-10}
+      - LITERATURE_TIMEOUT_SECONDS=${LITERATURE_TIMEOUT_SECONDS:-10}
+      - CROSSREF_MAILTO=${CROSSREF_MAILTO:-}
       # 可选：API 鉴权 token
       - API_TOKEN=${API_TOKEN:-}
       # 任务保留天数

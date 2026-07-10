@@ -11,7 +11,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 MAIN_PY = str(PROJECT_ROOT / "main.py")
 TUI_PY = str(PROJECT_ROOT / "main_tui.py")
 FAILED = 0
-SUBPROCESS_ENV = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+SUBPROCESS_ENV = {
+    **os.environ,
+    "PYTHONIOENCODING": "utf-8",
+    "LITERATURE_PROVIDER": "mock",
+}
 
 
 def configure_stdio():
@@ -76,7 +80,7 @@ def run_pipeline(args, label):
         print(f"[WARN] 状态文件未在预期路径: {state_file}")
 
     # 验证报告文件（位于 job 目录下）
-    report_path = full_job_dir / "report_framework.md"
+    report_path = full_job_dir / "report.md"
     if report_path.exists():
         with open(report_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -105,8 +109,11 @@ def run_pipeline(args, label):
         if isinstance(t2_data, dict):
             lr = t2_data.get("literature_results", [])
             all_sim = all(r.get("source_type") == "simulated" for r in lr if isinstance(r, dict))
-            if all_sim:
-                print(f"[ OK ] T2: {len(lr)} results, all simulated")
+            if t2_data.get("provider") == "mock" and all_sim:
+                print(f"[ OK ] T2: explicit mock, {len(lr)} simulated results")
+            else:
+                print(f"[FAIL] T2 provider/source contract invalid: {t2_data.get('provider')}")
+                FAILED += 1
 
         # T3 triple-role schema
         t3_data = ctx.get("T3", {}).get("result", {})
@@ -286,7 +293,7 @@ if tui_run.returncode != 0:
     print(tui_run.stderr)
     FAILED += 1
 else:
-    report_path = PROJECT_ROOT / "outputs" / "jobs" / "test_tui_topic" / "report_framework.md"
+    report_path = PROJECT_ROOT / "outputs" / "jobs" / "test_tui_topic" / "report.md"
     if report_path.exists():
         print("[ OK ] TUI one-shot generated report")
     else:

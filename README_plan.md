@@ -1,89 +1,40 @@
-# Roadmap And Release Checklist
+# NoteForge Public Roadmap
 
-This file records the current public roadmap for Weisse Wunderstern. It intentionally avoids local-only documents, private sample names, and development-chat history.
+NoteForge is a lightweight, verifiable topic and document distillation pipeline. The project prioritizes data authenticity, provenance, and report trustworthiness over feature count.
 
-## Current Status
+## v0.2: Evidence-Aware Retrieval
 
-The project is ready as a lightweight public prototype with:
+Implemented in the current release:
 
-- CLI topic/file analysis.
-- Zero-dependency TUI.
-- FastAPI submit/status/result service.
-- Docker Compose deployment.
-- Mock mode without required API keys.
-- Optional OpenAI-compatible LLM mode.
-- Job-isolated artifacts under `outputs/jobs/{job_id}/`.
-- Atomic state/context writes.
-- Unit tests, smoke tests, API tests, Docker validation, privacy audit, and CI.
+- Real Crossref literature retrieval with explicit provider selection.
+- Source records for external APIs, local documents, LLM inference, simulated data, and unverified content.
+- Evidence-aware T3 claims and structured T5 technical cases.
+- Strict T6 policy evidence gating; no factual policy output without a cited source.
+- Final `report.md` with sources, warnings, and compatibility output for v0.1 clients.
+- Real topic/document examples and an explicit Mock-versus-real behavior guide.
 
-## Release Readiness
+## v0.3: Python Engineering
 
-Before publishing, run:
+- Adopt `pyproject.toml` and a `src/noteforge/` package layout.
+- Add an installed `noteforge` command and stable SDK models.
+- Replace task-ID-centric context contracts with semantic models while retaining a migration reader.
+- Formalize the Job state machine and structured error codes.
+- Add Ruff, Pyright, coverage thresholds, and OpenAPI contract checks.
 
-```bash
-python check_all.py
-python smoke_test.py
-python test_api_client.py
-python scripts/privacy_audit.py --history
-python scripts/privacy_audit.py --include-outputs
-docker compose config
-docker compose build api
-```
+## v0.4: Report Quality
 
-Optional:
+- Citation numbering, DOI/URL deduplication, and citation completeness checks.
+- Evidence grades and conflict/obsolescence detection.
+- Report presets for technical research, literature review, industry analysis, policy analysis, and product comparison.
+- JSON and HTML exports before DOCX and PDF.
 
-```powershell
-$env:INSTALL_EXTRAS="true"
-docker compose build api
-```
+## v1.0 Release Conditions
 
-## Near-Term Priorities
+- Installable Python package with stable CLI, API, and SDK interfaces.
+- At least one production-ready real Provider and complete provenance on all outputs.
+- T5/T6 validated against real source material.
+- Citation traceability, representative examples, passing CI, and documented capability boundaries.
 
-### P0: Public Release Hygiene
+## Deferred Until After v1.0
 
-- Confirm no `.env`, generated reports, local sample documents, IDE metadata, or cache files are staged.
-- Review `git diff --cached` before the first public push.
-- Confirm CI passes on the first GitHub run.
-- Add a first Git tag after CI succeeds.
-
-### P1: Parser Quality
-
-- Add public synthetic PDF fixtures.
-- Cover PDF text extraction, tables, headings, and formula-like text.
-- Keep parser warnings explicit; never fabricate missing formulas, metrics, or citations.
-
-### P1: API Robustness
-
-- Add tests for oversized files, empty uploads, wrong tokens, and result requests before completion.
-- Consider structured error codes in API responses.
-- Keep upload filenames sanitized and job IDs validated.
-
-### P2: Data Contracts
-
-- Gradually migrate context keys from task IDs (`T1`, `T2`, `T3`) to semantic keys while preserving compatibility.
-- Add lightweight schema validation helpers for T0/T1/T2/T3 outputs.
-
-### P2: Real Literature Provider
-
-Current T2 providers generate simulated candidates. A future real provider should:
-
-- Preserve `source_type`.
-- Include provider metadata such as `source_provider`, `url`, `doi`, `title`, `authors`, and `year`.
-- Fall back gracefully when external retrieval fails.
-- Avoid blocking the core pipeline on provider outages.
-
-### P2: T5/T6 Upgrades
-
-T5/T6 are currently lightweight dynamic branches. Future versions can turn them into structured outputs such as:
-
-- Technical case matrices.
-- Policy/compliance impact matrices.
-- Evidence quality summaries.
-
-## Not Planned For The First Public Release
-
-- Heavy vector databases.
-- Full GraphRAG.
-- Multi-tenant permission systems.
-- A complex frontend.
-- Claims of verified real literature search before a real provider exists.
+GraphRAG, heavy vector databases, large knowledge graphs, multi-tenant authorization, complex frontends, cloud SaaS, and open-ended multi-agent loops remain out of scope.

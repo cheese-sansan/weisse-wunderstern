@@ -1,12 +1,12 @@
 # Contributing
 
-Thank you for considering a contribution to Weisse Wunderstern.
+Thank you for considering a contribution to NoteForge.
 
 ## Setup
 
 ```bash
-git clone https://github.com/cheese-sansan/weisse-wunderstern.git
-cd weisse-wunderstern
+git clone https://github.com/cheese-sansan/NoteForge.git
+cd NoteForge
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
@@ -44,7 +44,8 @@ python scripts/privacy_audit.py --include-outputs
 
 ## Contribution Rules
 
-- Keep Mock mode usable without external API keys.
+- Keep explicit Mock mode usable without a network connection or API keys.
+- Never add an automatic Mock fallback to a real Provider execution path.
 - Do not commit `.env`, credentials, generated outputs, cache files, IDE metadata, or local-only documents.
 - Do not include real API keys, tokens, private paths, phone numbers, or generated reports in code, tests, docs, issues, or pull requests.
 - Keep simulated literature clearly labeled with `source_type: simulated`.

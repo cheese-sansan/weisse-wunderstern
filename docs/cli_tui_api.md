@@ -5,13 +5,16 @@
 Analyze a topic:
 
 ```bash
-python main.py --topic "transformer model evaluation" --output demo_topic
+python main.py --topic "transformer model evaluation" --provider crossref --output demo_topic
 ```
 
 Analyze a file:
 
 ```bash
-python main.py --file ./examples/sample_paper_abstract.md --output demo_file
+python main.py --file ./examples/sample_paper_abstract.md --provider crossref --output demo_file
+
+# Explicit offline simulation
+python main.py --topic "transformer model evaluation" --provider mock --output demo_mock
 ```
 
 Start the TUI from the CLI:
@@ -31,7 +34,7 @@ python main_tui.py
 One-shot commands:
 
 ```bash
-python main_tui.py --topic "AI safety" --job-id tui_ai_safety
+python main_tui.py --topic "AI safety" --provider crossref --job-id tui_ai_safety
 python main_tui.py --file ./examples/sample_paper_abstract.md --job-id tui_file_demo
 python main_tui.py --list
 python main_tui.py --report tui_ai_safety
@@ -60,7 +63,8 @@ curl http://localhost:8000/health
 Submit:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/jobs/submit -F "topic=AI safety"
+curl -X POST http://localhost:8000/api/v1/jobs/submit \
+  -F "topic=AI safety" -F "provider=crossref"
 ```
 
 Status:
@@ -74,6 +78,8 @@ Result:
 ```bash
 curl http://localhost:8000/api/v1/jobs/result/{job_id}
 ```
+
+The result includes `provider_status`, `sources`, `tech_cases`, `policy_assessment`, and `warnings` in addition to the existing report and context summary.
 
 ## API Authentication
 

@@ -10,6 +10,7 @@ T3: Extractor-Critic-Synthesizer 审稿反思环路
 """
 
 import json
+import re
 
 
 def run(t2_output, t0_output=None) -> dict:
@@ -33,8 +34,13 @@ def run(t2_output, t0_output=None) -> dict:
         t2_output = {"literature_results": []}
 
     lit_results = t2_output.get("literature_results", [])
-    if not lit_results:
+    has_document = bool(
+        isinstance(t0_output, dict)
+        and (t0_output.get("markdown_text") or t0_output.get("raw_text"))
+    )
+    if not lit_results and not has_document:
         empty = _empty_result()
+        empty["warnings"] = list(t2_output.get("warnings", []))
         empty["final_report"] = (
             "# 学术提炼报告\n\n"
             "## 摘要\n\n文献不足，无法进行学术提炼分析。建议补充检索。\n\n"
@@ -43,6 +49,7 @@ def run(t2_output, t0_output=None) -> dict:
         return empty
 
     extractor = _extract_evidence(lit_results, t0_output)
+    extractor = _attach_claim_provenance(extractor, lit_results, t0_output)
     critic = _critic_review(extractor, lit_results)
     report = _synthesize_report(extractor, critic, lit_results, t0_output)
 
@@ -50,17 +57,22 @@ def run(t2_output, t0_output=None) -> dict:
         "extractor_draft": extractor,
         "critic_review": critic,
         "final_report": report,
+        "warnings": list(t2_output.get("warnings", [])),
     }
 
 
 def _empty_result() -> dict:
     return {
-        "extractor_draft": {"claims": [], "metrics": [], "methods": [], "evidence_snippets": []},
+        "extractor_draft": {
+            "claims": [], "claim_records": [], "metrics": [],
+            "methods": [], "evidence_snippets": [],
+        },
         "critic_review": {
             "critiques": [{"point": "文献不足", "severity": "high", "suggestion": "补充检索"}],
             "overall_confidence": "low",
         },
         "final_report": "",
+        "warnings": [],
     }
 
 
@@ -111,19 +123,20 @@ def _extract_evidence(lit_results: list, t0_output=None) -> dict:
         pass
 
     # ── Mock 模式 ──
-    return _mock_extract(lit_results)
+    return _mock_extract(lit_results, t0_output)
 
 
 def _normalize_extractor(data: dict) -> dict:
     return {
         "claims": data.get("claims", []) if isinstance(data.get("claims"), list) else [],
+        "claim_records": [],
         "metrics": _safe_list(data.get("metrics", [])),
         "methods": data.get("methods", []) if isinstance(data.get("methods"), list) else [],
         "evidence_snippets": _safe_list(data.get("evidence_snippets", [])),
     }
 
 
-def _mock_extract(lit_results: list) -> dict:
+def _mock_extract(lit_results: list, t0_output=None) -> dict:
     claims = []
     metrics = []
     methods = []
@@ -132,21 +145,52 @@ def _mock_extract(lit_results: list) -> dict:
     for lr in lit_results:
         if not isinstance(lr, dict):
             continue
-        for f in lr.get("key_findings", []):
+        findings = lr.get("key_findings", [])
+        if not isinstance(findings, list):
+            findings = []
+        for f in findings:
             if f:
                 claims.append(str(f))
         for m in lr.get("metrics", []):
             if m:
-                metrics.append({"name": m, "value": "见原文", "source": lr.get("title", "unknown")})
+                metrics.append({
+                    "name": m, "value": "见原文",
+                    "source": lr.get("title", "unknown"),
+                    "evidence_ids": [lr.get("source_id")],
+                })
         cm = lr.get("core_method", "")
         if cm:
             methods.append(str(cm))
         title = lr.get("title", "")
-        for f in lr.get("key_findings", []):
-            snippets.append({"text": str(f), "source": title})
+        for f in findings:
+            snippets.append({
+                "text": str(f), "source": title,
+                "evidence_ids": [lr.get("source_id")],
+            })
+        abstract = str(lr.get("abstract", "")).strip()
+        if abstract:
+            snippets.append({
+                "text": abstract[:1000], "source": title,
+                "evidence_ids": [lr.get("source_id")],
+            })
+
+    document_claims, document_metrics, document_methods, document_snippets = _document_evidence(t0_output)
+    claims = document_claims + claims
+    metrics = document_metrics + metrics
+    methods = document_methods + methods
+    snippets = document_snippets + snippets
 
     return {
         "claims": claims[:10],
+        "claim_records": [
+            {
+                "text": claim,
+                "evidence_ids": ["D1"],
+                "source_type": "source_document",
+                "verification_status": "supported",
+            }
+            for claim in document_claims[:10]
+        ],
         "metrics": metrics[:10],
         "methods": list(set(methods)),
         "evidence_snippets": snippets[:10],
@@ -277,7 +321,8 @@ def _synthesize_report(extractor_output: dict, critic_output: dict,
             "请基于以下信息生成学术提炼报告：\n\n"
             f"## 提取的证据\n{json.dumps(extractor_output, ensure_ascii=False, indent=2)}\n\n"
             f"## 审稿意见\n{json.dumps(critic_output, ensure_ascii=False, indent=2)}\n\n"
-            f"## 文献元信息\n共 {len(lit_results)} 篇文献（均为模拟生成，不可作为真实引用）\n\n"
+            f"## 文献元信息\n共 {len(lit_results)} 篇文献\n"
+            f"来源说明：{_source_declaration(lit_results, bool(t0_output))}\n\n"
             "报告必须包含以下 5 个章节（Markdown 格式）：\n"
             "## 核心共识\n（多文献共同确认的结论，标注支持文献数）\n\n"
             "## 学术冲突\n（文献之间的矛盾或争议点）\n\n"
@@ -287,8 +332,7 @@ def _synthesize_report(extractor_output: dict, critic_output: dict,
             "- 📄 文档中明确出现\n"
             "- 📚 由多文献支持\n"
             "- ⚠️ 模型推断/待验证）\n\n"
-            "最后添加声明："
-            "> ⚠️ 本文献均为模拟生成（source_type: simulated），不可作为真实学术引用。"
+            "最后添加与输入来源类型一致的来源声明，不得把真实检索结果描述为模拟文献。"
         )
 
         result = chat(prompt, system_prompt=system_prompt, temperature=0.6)
@@ -298,12 +342,13 @@ def _synthesize_report(extractor_output: dict, critic_output: dict,
         pass
 
     # ── Mock 模式 ──
-    return _mock_synthesize(extractor_output, critic_output, lit_results)
+    return _mock_synthesize(extractor_output, critic_output, lit_results, t0_output)
 
 
 def _mock_synthesize(extractor_output: dict, critic_output: dict,
-                     lit_results: list) -> str:
+                     lit_results: list, t0_output=None) -> str:
     claims = extractor_output.get("claims", [])
+    claim_records = extractor_output.get("claim_records", [])
     methods = extractor_output.get("methods", [])
     metrics = extractor_output.get("metrics", [])
     critiques = critic_output.get("critiques", [])
@@ -315,25 +360,27 @@ def _mock_synthesize(extractor_output: dict, critic_output: dict,
     lines.append("## 核心共识")
     lines.append("")
     if claims:
-        for c in claims[:5]:
-            lines.append(f"- {c}")
-        lines.append(f"")
-        lines.append(f"> 以上共识由 {len(lit_results)} 篇文献支持（📚 由多文献支持）")
+        records_by_text = {
+            str(record.get("text", "")): record
+            for record in claim_records if isinstance(record, dict)
+        }
+        for claim in claims[:5]:
+            record = records_by_text.get(str(claim), {})
+            refs = ", ".join(f"[{value}]" for value in record.get("evidence_ids", []))
+            suffix = f" {refs}" if refs else " ⚠️ 待验证"
+            lines.append(f"- {claim}{suffix}")
     else:
-        lines.append("- 文献数量不足，无法形成核心共识")
+        lines.append("- 现有来源不足以形成可验证的核心共识")
     lines.append("")
 
     # 学术冲突
     lines.append("## 学术冲突")
     lines.append("")
-    if len(lit_results) >= 2:
-        titles = [lr.get("title", "") for lr in lit_results[:2] if isinstance(lr, dict)]
-        if len(titles) >= 2:
-            lines.append(f"- 不同文献在方法选择上可能存在分歧：如 {titles[0]} 与 {titles[1]} 采用不同技术路线")
-        else:
-            lines.append("- 文献间方法差异尚不明确，需要更多比较研究")
+    distinct_methods = list(dict.fromkeys(methods))
+    if len(distinct_methods) >= 2:
+        lines.append(f"- 输入证据包含不同方法：{distinct_methods[0]} 与 {distinct_methods[1]}，其结果不可直接等同比较")
     else:
-        lines.append("- 文献数量不足以识别学术冲突")
+        lines.append("- 现有证据未明确给出足以比较的方法差异，无法识别学术冲突")
     lines.append("")
 
     # 方法局限
@@ -341,7 +388,8 @@ def _mock_synthesize(extractor_output: dict, critic_output: dict,
     lines.append("")
     if methods:
         for m in list(set(methods))[:3]:
-            lines.append(f"- **{m}**：样本量和泛化性未经验证")
+            clean_method = str(m).replace("**", "").strip()
+            lines.append(f"- 输入方法信息：{clean_method}；其适用范围和泛化性需单独验证")
     for cq in critiques[:3]:
         lines.append(f"- {cq.get('point', '')}（严重程度：{cq.get('severity', 'N/A')}）")
     lines.append("")
@@ -356,7 +404,7 @@ def _mock_synthesize(extractor_output: dict, critic_output: dict,
             if isinstance(m, dict):
                 lines.append(f"| {m.get('name', 'N/A')} | {m.get('value', 'N/A')} | {m.get('source', 'N/A')} |")
         lines.append("")
-        lines.append("> 📄 以上指标提取自输入文献，未做修改")
+        lines.append("> 📄 以上指标按原值提取自输入来源，未做数值补全")
     else:
         lines.append("- 未在输入中发现可验证的定量指标（⚠️ 模型推断/待验证）")
     lines.append("")
@@ -366,17 +414,21 @@ def _mock_synthesize(extractor_output: dict, critic_output: dict,
     lines.append("")
     lines.append("| 证据陈述 | 证据等级 |")
     lines.append("| --- | --- |")
-    for c in claims[:3]:
-        lines.append(f"| {c} | 📚 由多文献支持 |")
-    if methods:
-        lines.append(f"| 采用 {methods[0]} 等方法 | 📄 文档中明确出现 |")
+    for claim in claims[:3]:
+        record = next(
+            (item for item in claim_records if isinstance(item, dict) and item.get("text") == claim),
+            {},
+        )
+        refs = ", ".join(record.get("evidence_ids", [])) or "无引用"
+        level = record.get("source_type", "unverified")
+        lines.append(f"| {claim} [{refs}] | {level} |")
     if not metrics:
         lines.append("| 定量指标缺失 | ⚠️ 模型推断/待验证 |")
     lines.append(f"| 综合可信度评估 | {confidence.upper()} |")
     lines.append("")
 
     # 声明
-    lines.append("> ⚠️ 本报告中的文献均为模拟生成（source_type: simulated），不可作为真实学术引用。")
+    lines.append(f"> 来源声明：{_source_declaration(lit_results, bool(t0_output))}")
     lines.append("> 所有定量指标应回查原文验证，审稿意见为自动生成，供研究辅助参考。")
 
     return "\n".join(lines)
@@ -392,8 +444,11 @@ def _format_literature_for_prompt(lit_results: list) -> str:
         if not isinstance(lr, dict):
             continue
         parts.append(
-            f"[{i}] {lr.get('title', 'Unknown')} "
+            f"[{lr.get('source_id', f'L{i}')}] {lr.get('title', 'Unknown')} "
             f"({', '.join(lr.get('authors', []))}, {lr.get('year', 'N/A')})\n"
+            f"  来源类型: {lr.get('source_provider', 'unknown')}/{lr.get('source_type', 'unverified')}\n"
+            f"  DOI: {lr.get('doi') or 'N/A'}\n"
+            f"  摘要: {str(lr.get('abstract', ''))[:2000] or 'N/A'}\n"
             f"  方法: {lr.get('core_method', 'N/A')}\n"
             f"  数据集: {', '.join(lr.get('datasets', [])) or 'N/A'}\n"
             f"  指标: {', '.join(lr.get('metrics', [])) or 'N/A'}\n"
@@ -401,6 +456,128 @@ def _format_literature_for_prompt(lit_results: list) -> str:
             f"  局限: {'; '.join(lr.get('limitations', []))}"
         )
     return "\n\n".join(parts)
+
+
+def _attach_claim_provenance(extractor_output: dict, lit_results: list,
+                             t0_output=None) -> dict:
+    """Keep legacy string claims and add evidence-aware claim records."""
+    output = dict(extractor_output)
+    valid_ids = [
+        str(item.get("source_id")) for item in lit_results
+        if isinstance(item, dict) and item.get("source_id")
+    ]
+    if isinstance(t0_output, dict) and (
+        t0_output.get("markdown_text") or t0_output.get("raw_text")
+    ):
+        valid_ids.insert(0, "D1")
+    source_types = {
+        str(item.get("source_type", "unverified"))
+        for item in lit_results if isinstance(item, dict)
+    }
+    if source_types == {"simulated"}:
+        origin = "simulated"
+        status = "simulated"
+    else:
+        origin = "llm_inference"
+        status = "supported" if valid_ids else "unverified"
+    existing_records = {
+        str(record.get("text", "")): record
+        for record in output.get("claim_records", [])
+        if isinstance(record, dict) and record.get("text")
+    }
+    records = []
+    for claim in output.get("claims", []):
+        text = str(claim).strip()
+        if not text:
+            continue
+        if text in existing_records:
+            records.append(existing_records[text])
+            continue
+        matching_ids = [
+            str(item.get("source_id")) for item in lit_results
+            if isinstance(item, dict) and item.get("source_id")
+            and text in [str(value) for value in item.get("key_findings", [])]
+        ]
+        records.append({
+            "text": text,
+            "evidence_ids": matching_ids or valid_ids,
+            "source_type": origin,
+            "verification_status": status,
+        })
+    output["claim_records"] = records
+    return output
+
+
+def _source_declaration(lit_results: list, has_document: bool = False) -> str:
+    types = {
+        str(item.get("source_type", "unverified"))
+        for item in lit_results if isinstance(item, dict)
+    }
+    if not lit_results and has_document:
+        return "分析依据原始文档 [D1]；未检索到外部文献，文档外结论不应推断。"
+    if not lit_results:
+        return "未检索到有效文献，结论证据不足。"
+    if types == {"simulated"} and has_document:
+        return "包含原始文档与模拟文献；[D1] 可回查原文，模拟记录不可作为真实引用。"
+    if types == {"simulated"}:
+        return "全部文献为模拟数据（source_type: simulated），不可作为真实学术引用。"
+    if "simulated" in types:
+        return "包含模拟与真实来源；模拟记录不可作为真实引用，需按来源标记逐项核验。"
+    if types == {"external_api"}:
+        return "文献元数据来自真实外部 API；摘要和元数据仍应通过 DOI 或原始页面复核。"
+    return "包含原始或未验证来源，所有结论均需按证据标记回查。"
+
+
+def _document_evidence(t0_output) -> tuple[list, list, list, list]:
+    """Extract literal Results rows and Methods bullets from a Markdown document."""
+    if not isinstance(t0_output, dict):
+        return [], [], [], []
+    text = str(t0_output.get("markdown_text") or t0_output.get("raw_text") or "")
+    if not text.strip():
+        return [], [], [], []
+
+    claims = []
+    metrics = []
+    methods = []
+    snippets = [{"text": text[:1000], "source": "source document", "evidence_ids": ["D1"]}]
+    section = ""
+    table_header = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("#"):
+            section = line.lstrip("#").strip().casefold()
+            table_header = []
+            continue
+        if not line:
+            continue
+        if "method" in section or "方法" in section:
+            if line.startswith(("-", "*")):
+                methods.append(line.lstrip("-* ").strip())
+        if "result" not in section and "结果" not in section:
+            continue
+        if line.startswith("|"):
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            if cells and all(set(cell) <= {"-", ":", " "} for cell in cells):
+                continue
+            if not table_header:
+                table_header = cells
+                continue
+            if cells:
+                claim = "文档结果：" + "；".join(cells)
+                claims.append(claim)
+                row_label = cells[0]
+                for index, value in enumerate(cells[1:], 1):
+                    if re.search(r"\d", value):
+                        column = table_header[index] if index < len(table_header) else f"column {index}"
+                        metrics.append({
+                            "name": f"{row_label} {column}",
+                            "value": value,
+                            "source": "source document",
+                            "evidence_ids": ["D1"],
+                        })
+        elif not line.startswith(("-", "*")):
+            claims.append(f"文档结果：{line}")
+    return claims[:10], metrics[:20], methods[:10], snippets
 
 
 def _safe_list(val) -> list:

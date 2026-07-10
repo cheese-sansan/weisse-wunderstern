@@ -1,5 +1,5 @@
 """
-Weisse Wunderstern — FastAPI 异步服务入口
+NoteForge — FastAPI 异步服务入口
 
 端点：
   POST /api/v1/jobs/submit       提交任务（可选上传文件 + topic）
@@ -30,14 +30,16 @@ from utils.logger import get_logger
 from utils.state_manager import StateManager, validate_job_id
 from utils.context_manager import ContextStore
 from core.pipeline import run_job, PipelineError
+from core.version import __version__
+from tasks.t2_literature_search import DEFAULT_PROVIDER, PROVIDER_NAMES
 
 log = get_logger(__name__)
 
 load_env()
 
 app = FastAPI(
-    title="Weisse Wunderstern API",
-    version="0.4.0",
+    title="NoteForge API",
+    version=__version__,
     description="学术文献提炼引擎 — 提交-轮询-获取结果接口",
 )
 
@@ -133,10 +135,11 @@ def _generate_job_id() -> str:
     return f"{now}-{suffix}"
 
 
-def _run_job_background(job_id: str, topic: str, file_path: str = None):
+def _run_job_background(job_id: str, topic: str, file_path: str = None,
+                        provider: str | None = None):
     """在后台线程中执行管道，捕获异常写入状态。"""
     try:
-        run_job(job_id, topic=topic, file_path=file_path)
+        run_job(job_id, topic=topic, file_path=file_path, provider=provider)
     except Exception as e:
         log.error("Job %s 执行失败: %s", job_id, e)
         try:
@@ -154,10 +157,23 @@ def _run_job_background(job_id: str, topic: str, file_path: str = None):
 async def submit_job(
     file: UploadFile = File(None),
     topic: str = Form(""),
+    provider: str = Form(""),
 ):
     """提交一个分析任务。提供 file 或 topic 至少其一。"""
     if not topic and (file is None or file.filename == ""):
         raise HTTPException(status_code=400, detail="请提供 topic 或上传文件")
+
+    provider = provider.strip().lower().replace("_", "-")
+    if provider and provider not in PROVIDER_NAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文献 Provider；可选值: {', '.join(PROVIDER_NAMES)}",
+        )
+    selected_provider = (
+        provider or os.environ.get("LITERATURE_PROVIDER", DEFAULT_PROVIDER)
+    ).strip().lower().replace("_", "-")
+    if selected_provider not in PROVIDER_NAMES:
+        raise HTTPException(status_code=500, detail="服务端 LITERATURE_PROVIDER 配置无效")
 
     # 文件验证
     if file and file.filename:
@@ -197,14 +213,14 @@ async def submit_job(
     # 后台执行
     t = threading.Thread(
         target=_run_job_background,
-        args=(job_id, topic, uploaded_path),
+        args=(job_id, topic, uploaded_path, selected_provider),
         daemon=True,
     )
     t.start()
 
     return JSONResponse(
         status_code=202,
-        content={"job_id": job_id, "status": "PENDING"},
+        content={"job_id": job_id, "status": "PENDING", "provider": selected_provider},
     )
 
 
@@ -263,7 +279,9 @@ async def job_result(job_id: str):
         )
 
     # 读取报告
-    report_path = os.path.join(JOBS_OUTPUT_DIR, job_id, "report_framework.md")
+    report_path = os.path.join(JOBS_OUTPUT_DIR, job_id, "report.md")
+    if not os.path.exists(report_path):
+        report_path = os.path.join(JOBS_OUTPUT_DIR, job_id, "report_framework.md")
     report = ""
     if os.path.exists(report_path):
         with open(report_path, "r", encoding="utf-8") as f:
@@ -275,6 +293,9 @@ async def job_result(job_id: str):
     t1_out = _safe_get(ctx_data, "T1", "result")
     t2_out = _safe_get(ctx_data, "T2", "result")
     t3_out = _safe_get(ctx_data, "T3", "result")
+    t4_out = _safe_get(ctx_data, "T4", "result")
+    t5_out = _safe_get(ctx_data, "T5", "result")
+    t6_out = _safe_get(ctx_data, "T6", "result")
     context_summary = {
         "keys": list(ctx_data.keys()),
         "t1_keywords": t1_out.get("keywords", []) if isinstance(t1_out, dict) else [],
@@ -287,6 +308,16 @@ async def job_result(job_id: str):
         "status": state.get("status"),
         "report": report,
         "context_summary": context_summary,
+        "provider_status": {
+            "provider": t2_out.get("provider"),
+            "status": t2_out.get("status"),
+            "query": t2_out.get("query"),
+            "retrieved_at": t2_out.get("retrieved_at"),
+        } if isinstance(t2_out, dict) else None,
+        "sources": t4_out.get("sources", []) if isinstance(t4_out, dict) else [],
+        "tech_cases": t5_out.get("cases", []) if isinstance(t5_out, dict) else [],
+        "policy_assessment": t6_out.get("policies", []) if isinstance(t6_out, dict) else [],
+        "warnings": t4_out.get("warnings", []) if isinstance(t4_out, dict) else [],
     }
 
 
@@ -316,7 +347,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("API_PORT", "8000"))
     _schedule_cleanup()
     auth_status = "已启用" if API_TOKEN else "未启用（公开访问）"
-    print(f"启动 Weisse Wunderstern API 服务 (端口 {port})...")
+    print(f"启动 NoteForge API 服务 (端口 {port})...")
     print(f"API 鉴权: {auth_status}")
     print(f"上传限制: {MAX_UPLOAD_SIZE_MB}MB, 允许类型: {len(ALLOWED_EXTENSIONS)} 种")
     uvicorn.run("main_api:app", host="0.0.0.0", port=port, reload=False)

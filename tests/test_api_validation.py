@@ -65,6 +65,13 @@ class TestApiValidation(unittest.TestCase):
         res = self.client.post("/api/v1/jobs/submit", data={"topic": ""})
         self.assertEqual(res.status_code, 400)
 
+    def test_unknown_provider_rejected(self):
+        res = self.client.post(
+            "/api/v1/jobs/submit",
+            data={"topic": "AI safety", "provider": "unknown"},
+        )
+        self.assertEqual(res.status_code, 400)
+
     def test_token_auth_blocks_missing_token(self):
         main_api.API_TOKEN = "tok"
         res = self.client.get("/api/v1/jobs/status/not_found_job")

@@ -1,6 +1,6 @@
 # Development Guide
 
-This document describes the public architecture and development workflow for Weisse Wunderstern.
+This document describes the public architecture and development workflow for NoteForge.
 
 ## Architecture
 
@@ -32,7 +32,8 @@ Each job writes to `outputs/jobs/{job_id}/`:
 task_state.json
 context_data.json
 resume_log.txt
-report_framework.md
+report.md
+report_framework.md  # v0.1 compatibility copy
 ```
 
 `StateManager` and `ContextStore` validate `job_id`, isolate per-job state, and write JSON atomically.
