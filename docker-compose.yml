@@ -11,7 +11,6 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     environment:
-      - MODE=api
       - API_PORT=8000
       - TZ=Asia/Shanghai
       # 可选：LLM API 配置
@@ -35,8 +34,3 @@ services:
       - ./outputs:/app/outputs
       - ./examples:/app/examples:ro
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3

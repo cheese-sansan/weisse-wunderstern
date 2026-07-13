@@ -1,6 +1,7 @@
 """json_parser 单元测试。"""
 import unittest
-from utils.json_parser import extract_json
+
+from noteforge.json_tools import extract_json
 
 
 class TestJsonParser(unittest.TestCase):

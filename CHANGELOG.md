@@ -6,6 +6,25 @@ All notable changes to NoteForge are documented here.
 
 No unreleased changes yet.
 
+## v0.3.0 - 2026-07-11
+
+### Added
+
+- Installable `src/noteforge` package, unified `noteforge` command, typed dataclass SDK, and provider protocol.
+- Schema-v3 semantic context, strict Job/Stage state machines, and structured error records.
+- Transactional, idempotent v0.2 job migration with byte-exact backups and rollback.
+- Wheel-first CI, Ruff, Pyright, 80% coverage gate, OpenAPI snapshot, API smoke, privacy audit, and Docker build.
+
+### Changed
+
+- CLI, TUI, API, and Docker now share `AnalysisRequest` and `run_job`.
+- New jobs write only canonical `report.md`; HTTP API v1 paths and response fields remain compatible.
+- Dependencies are expressed as `api`, `documents`, and `dev` extras in `pyproject.toml`.
+
+### Removed
+
+- Root launch scripts, `run.sh`, legacy `core/tasks/utils` imports, and all `requirements-*.txt` files.
+
 ## v0.2.0 - 2026-07-10
 
 ### Added

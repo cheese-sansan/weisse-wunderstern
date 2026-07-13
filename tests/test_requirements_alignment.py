@@ -1,47 +1,39 @@
-"""Regression tests for public project requirements and dynamic routing."""
+"""Regression tests for semantic dynamic-stage routing."""
 
-import os
-import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
-from core.pipeline import run_job
-from utils.state_manager import StateManager
+from noteforge import AnalysisRequest, run_job
+from noteforge.models import StageStatus
+from noteforge.storage.state import StateManager
 
 
 class TestProjectRequirementsAlignment(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
 
     def tearDown(self):
-        for job_id in (
-            "align_ai_trend",
-            "align_car_safety",
-            "align_llm_deploy",
-        ):
-            job_dir = os.path.join("outputs", "jobs", job_id)
-            if os.path.exists(job_dir):
-                shutil.rmtree(job_dir)
+        self.temp.cleanup()
 
-    def _run_and_task_ids(self, job_id, topic):
-        job_dir = os.path.join("outputs", "jobs", job_id)
-        if os.path.exists(job_dir):
-            shutil.rmtree(job_dir)
-        run_job(job_id, topic=topic, provider="mock")
-        state = StateManager(job_id).load_state()
-        return {task["task_id"] for task in state["task_list"]}
+    def _run_and_stages(self, job_id, topic):
+        run_job(AnalysisRequest(topic=topic, provider="mock", job_id=job_id), output_root=self.root)
+        return StateManager(job_id, self.root).load_state().stages
 
-    def test_ai_industry_topic_triggers_t5_and_t6(self):
-        task_ids = self._run_and_task_ids("align_ai_trend", "2025 Q3 AI行业趋势")
-        self.assertIn("T5", task_ids)
-        self.assertIn("T6", task_ids)
+    def test_ai_industry_topic_triggers_technical_and_policy(self):
+        stages = self._run_and_stages("align_ai_trend", "2025 Q3 AI industry policy transformer trends")
+        self.assertIs(stages["technical_cases"].status, StageStatus.COMPLETED)
+        self.assertIs(stages["policy_assessment"].status, StageStatus.COMPLETED)
 
-    def test_car_safety_topic_triggers_t6_only(self):
-        task_ids = self._run_and_task_ids("align_car_safety", "智能汽车安全技术进展")
-        self.assertNotIn("T5", task_ids)
-        self.assertIn("T6", task_ids)
+    def test_plain_research_topic_skips_optional_stages(self):
+        stages = self._run_and_stages("align_plain", "bibliographic evidence review")
+        self.assertIs(stages["technical_cases"].status, StageStatus.SKIPPED)
+        self.assertIs(stages["policy_assessment"].status, StageStatus.SKIPPED)
 
-    def test_llm_deployment_topic_triggers_t5_and_t6(self):
-        task_ids = self._run_and_task_ids("align_llm_deploy", "大模型轻量化部署方案")
-        self.assertIn("T5", task_ids)
-        self.assertIn("T6", task_ids)
+    def test_llm_deployment_topic_triggers_technical_stage(self):
+        stages = self._run_and_stages("align_llm_deploy", "transformer deployment benchmark")
+        self.assertIs(stages["technical_cases"].status, StageStatus.COMPLETED)
 
 
 if __name__ == "__main__":

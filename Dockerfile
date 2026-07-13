@@ -3,27 +3,27 @@ FROM ${PYTHON_IMAGE}
 
 WORKDIR /app
 
-COPY requirements-api.txt requirements-extras.txt /app/
+COPY pyproject.toml README.md LICENSE /app/
+COPY src /app/src
 
-# 安装 API 依赖；可选文档解析依赖按需启用。
 ARG INSTALL_EXTRAS=false
-RUN pip install --no-cache-dir -r requirements-api.txt && \
+RUN python -m pip install --no-cache-dir --upgrade pip && \
     if [ "$INSTALL_EXTRAS" = "true" ]; then \
-        pip install --no-cache-dir -r requirements-extras.txt; \
+        python -m pip install --no-cache-dir ".[api,documents]"; \
+    else \
+        python -m pip install --no-cache-dir ".[api]"; \
     fi
 
-COPY . /app
+ENV TZ=Asia/Shanghai \
+    API_PORT=8000 \
+    PYTHONUNBUFFERED=1
 
-# 时区
-ENV TZ=Asia/Shanghai
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
-
-RUN chmod +x /app/run.sh
-
-# MODE=cli 或 api
-ENV MODE=api
-ENV API_PORT=8000
 
 EXPOSE 8000
 
-ENTRYPOINT ["/bin/bash", "/app/run.sh"]
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+
+ENTRYPOINT ["noteforge"]
+CMD ["api", "--host", "0.0.0.0", "--port", "8000"]

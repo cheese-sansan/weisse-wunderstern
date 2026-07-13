@@ -1,98 +1,41 @@
-# CLI, TUI, And API Usage
+# CLI, TUI, and API
 
 ## CLI
 
-Analyze a topic:
-
 ```bash
-python main.py --topic "transformer model evaluation" --provider crossref --output demo_topic
+noteforge run --topic "transformer evaluation" --provider crossref
+noteforge run --file ./examples/sample_paper_abstract.md --provider mock --job-id paper-demo
+noteforge run --job-id paper-demo                 # resume persisted input
+noteforge jobs list --limit 20
+noteforge jobs migrate --all
+noteforge report paper-demo
 ```
 
-Analyze a file:
-
-```bash
-python main.py --file ./examples/sample_paper_abstract.md --provider crossref --output demo_file
-
-# Explicit offline simulation
-python main.py --topic "transformer model evaluation" --provider mock --output demo_mock
-```
-
-Start the TUI from the CLI:
-
-```bash
-python main.py --tui
-```
+Use `--output-root` on `run`, `jobs list`, `jobs migrate`, and `report` when artifacts should not use `outputs/`.
 
 ## TUI
 
-Interactive mode:
-
 ```bash
-python main_tui.py
+noteforge tui
 ```
 
-One-shot commands:
-
-```bash
-python main_tui.py --topic "AI safety" --provider crossref --job-id tui_ai_safety
-python main_tui.py --file ./examples/sample_paper_abstract.md --job-id tui_file_demo
-python main_tui.py --list
-python main_tui.py --report tui_ai_safety
-```
+The TUI runs topic/file analysis, lists jobs, and displays canonical reports through the same SDK used by the CLI and API.
 
 ## API
 
-Install API dependencies:
-
 ```bash
-pip install -r requirements-api.txt
+python -m pip install ".[api]"
+noteforge api --host 0.0.0.0 --port 8000
 ```
-
-Start:
-
-```bash
-python main_api.py
-```
-
-Health:
 
 ```bash
 curl http://localhost:8000/health
-```
-
-Submit:
-
-```bash
 curl -X POST http://localhost:8000/api/v1/jobs/submit \
   -F "topic=AI safety" -F "provider=crossref"
-```
-
-Status:
-
-```bash
 curl http://localhost:8000/api/v1/jobs/status/{job_id}
-```
-
-Result:
-
-```bash
 curl http://localhost:8000/api/v1/jobs/result/{job_id}
 ```
 
-The result includes `provider_status`, `sources`, `tech_cases`, `policy_assessment`, and `warnings` in addition to the existing report and context summary.
+The v1 result retains `report`, `context_summary`, `provider_status`, `sources`, `tech_cases`, `policy_assessment`, and `warnings`. Status retains the legacy `T0…T6` presentation fields for HTTP compatibility even though persisted v3 data uses semantic stage names. Structured failures may add `error_code` without removing `detail` or `error`.
 
-## API Authentication
-
-Set `API_TOKEN` to require bearer-token authentication:
-
-```bash
-API_TOKEN=change-me python main_api.py
-```
-
-Then call:
-
-```bash
-curl -H "Authorization: Bearer change-me" http://localhost:8000/api/v1/jobs/status/{job_id}
-```
-
-Use a real secret only through environment variables or a local `.env` file. Never commit credentials.
+Set `API_TOKEN` to require `Authorization: Bearer ...` on `/api/v1/jobs/*`. Keep secrets in environment variables or an untracked `.env` file.

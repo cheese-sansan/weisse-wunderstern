@@ -1,153 +1,126 @@
-"""StateManager 单元测试。"""
-import unittest
-import os
-import shutil
+"""Schema-v3 state machine tests."""
+
+import json
+import tempfile
 import threading
-import re
-from utils.state_manager import StateManager, validate_job_id
+import unittest
+from pathlib import Path
+
+from noteforge.errors import InvalidStateTransition, NoteForgeError
+from noteforge.models import JobStatus, StageStatus
+from noteforge.storage.state import BASE_STAGES, StateManager, validate_job_id
 
 
 class TestStateManager(unittest.TestCase):
-
     def setUp(self):
-        self.job_id = "test_job_sm"
-        self.sm = StateManager(self.job_id)
-        self._clean()
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.manager = StateManager("test_job_sm", self.root)
 
     def tearDown(self):
-        self._clean()
-
-    def _clean(self):
-        d = os.path.join("outputs", "jobs", self.job_id)
-        if os.path.exists(d):
-            shutil.rmtree(d)
+        self.temp.cleanup()
 
     def test_init_creates_state(self):
-        self.sm.init_state()
-        self.assertTrue(os.path.exists(self.sm.state_file))
+        self.manager.init_state()
+        self.assertTrue(self.manager.state_file.exists())
 
     def test_job_id_in_state(self):
-        self.sm.init_state()
-        state = self.sm.load_state()
-        self.assertEqual(state["job_id"], self.job_id)
+        self.assertEqual(self.manager.init_state().job_id, "test_job_sm")
 
     def test_initial_status_pending(self):
-        self.sm.init_state()
-        state = self.sm.load_state()
-        self.assertEqual(state["status"], "PENDING")
+        self.assertIs(self.manager.init_state().status, JobStatus.PENDING)
 
-    def test_task_list_has_five_base_tasks(self):
-        self.sm.init_state()
-        state = self.sm.load_state()
-        self.assertEqual(len(state["task_list"]), 5)
+    def test_stage_list_has_seven_semantic_stages(self):
+        state = self.manager.init_state()
+        self.assertEqual(tuple(state.stages), BASE_STAGES)
+        self.assertNotIn("T1", state.stages)
 
-    def test_update_task_status(self):
-        self.sm.init_state()
-        self.sm.update_task_status("T1", "进行中")
-        state = self.sm.load_state()
-        t1 = [t for t in state["task_list"] if t["task_id"] == "T1"][0]
-        self.assertEqual(t1["status"], "进行中")
+    def test_update_stage_status(self):
+        self.manager.init_state()
+        self.manager.transition_stage("keyword_extract", StageStatus.RUNNING)
+        self.assertIs(self.manager.load_state().stages["keyword_extract"].status, StageStatus.RUNNING)
 
-    def test_status_history_timestamp_uses_original_format(self):
-        self.sm.init_state()
-        self.sm.update_task_status("T1", "进行中")
-        state = self.sm.load_state()
-        t1 = [t for t in state["task_list"] if t["task_id"] == "T1"][0]
-        timestamp = t1["status_history"][-1]["timestamp"]
-        self.assertRegex(timestamp, r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$")
+    def test_status_history_timestamp_is_iso8601(self):
+        self.manager.init_state()
+        self.manager.transition_stage("keyword_extract", StageStatus.RUNNING)
+        timestamp = self.manager.load_state().stages["keyword_extract"].history[-1]["timestamp"]
+        self.assertRegex(timestamp, r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+08:00$")
 
     def test_set_completed(self):
-        self.sm.init_state()
-        self.sm.set_completed()
-        state = self.sm.load_state()
-        self.assertEqual(state["status"], "COMPLETED")
+        self.manager.init_state()
+        self.manager.transition_stage("keyword_extract", StageStatus.RUNNING)
+        self.manager.transition_stage("keyword_extract", StageStatus.COMPLETED)
+        self.manager.set_completed()
+        self.assertIs(self.manager.load_state().status, JobStatus.COMPLETED)
 
     def test_set_error(self):
-        self.sm.init_state()
-        self.sm.set_error("test error")
-        state = self.sm.load_state()
-        self.assertEqual(state["status"], "FAILED")
-        self.assertEqual(state["error"], "test error")
+        self.manager.init_state()
+        self.manager.set_error("test error")
+        state = self.manager.load_state()
+        self.assertIs(state.status, JobStatus.FAILED)
+        self.assertEqual(state.error["message"], "test error")
 
     def test_job_isolation(self):
-        sm1 = StateManager("job_a")
-        sm2 = StateManager("job_b")
-        sm1.init_state()
-        sm2.init_state()
-        self.assertNotEqual(sm1.state_file, sm2.state_file)
-        self.assertTrue(os.path.exists(sm1.state_file))
-        self.assertTrue(os.path.exists(sm2.state_file))
-        # clean
-        for d in [os.path.join("outputs", "jobs", j) for j in ("job_a", "job_b")]:
-            if os.path.exists(d):
-                shutil.rmtree(d)
+        first = StateManager("job_a", self.root)
+        second = StateManager("job_b", self.root)
+        first.init_state()
+        second.init_state()
+        self.assertNotEqual(first.state_file, second.state_file)
 
     def test_thread_safety(self):
-        self.sm.init_state()
+        self.manager.init_state()
         errors = []
 
-        def update():
+        def update(stage):
             try:
-                for i in range(20):
-                    self.sm.update_task_status("T1", "进行中")
-            except Exception as e:
-                errors.append(e)
+                self.manager.transition_stage(stage, StageStatus.RUNNING)
+                self.manager.transition_stage(stage, StageStatus.COMPLETED)
+            except Exception as error:  # pragma: no cover - asserted below
+                errors.append(error)
 
-        threads = [threading.Thread(target=update) for _ in range(4)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        self.assertEqual(len(errors), 0)
-
-    def test_empty_state_file_recovers(self):
-        self.sm.init_state()
-        with open(self.sm.state_file, "w", encoding="utf-8") as f:
-            f.write("")
-        state = self.sm.load_state()
-        self.assertEqual(state["job_id"], self.job_id)
-        self.assertEqual(state["status"], "PENDING")
-
-    def test_corrupt_state_file_recovers(self):
-        self.sm.init_state()
-        with open(self.sm.state_file, "w", encoding="utf-8") as f:
-            f.write("{bad json")
-        state = self.sm.load_state()
-        self.assertEqual(state["job_id"], self.job_id)
-        self.assertEqual(state["status"], "PENDING")
-
-    def test_multiple_managers_same_job_share_lock(self):
-        self.sm.init_state()
-        other = StateManager(self.job_id)
-        errors = []
-
-        def update(manager, task_id):
-            try:
-                for _ in range(20):
-                    manager.update_task_status(task_id, "进行中")
-                    manager.update_task_status(task_id, "完成")
-            except Exception as e:
-                errors.append(e)
-
-        threads = [
-            threading.Thread(target=update, args=(self.sm, "T1")),
-            threading.Thread(target=update, args=(other, "T2")),
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
+        threads = [threading.Thread(target=update, args=(stage,)) for stage in BASE_STAGES[:4]]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
         self.assertEqual(errors, [])
-        state = self.sm.load_state()
-        self.assertEqual(state["task_list"][1]["status"], "完成")
-        self.assertEqual(state["task_list"][2]["status"], "完成")
+        self.assertTrue(all(
+            self.manager.load_state().stages[stage].status is StageStatus.COMPLETED
+            for stage in BASE_STAGES[:4]
+        ))
+
+    def test_empty_state_file_is_storage_error(self):
+        self.manager.init_state()
+        self.manager.state_file.write_text("", encoding="utf-8")
+        with self.assertRaises(NoteForgeError):
+            self.manager.load_state()
+
+    def test_corrupt_state_file_is_migration_error_and_preserved(self):
+        self.manager.init_state()
+        self.manager.state_file.write_text("{bad json", encoding="utf-8")
+        with self.assertRaises(NoteForgeError):
+            self.manager.load_state()
+        self.assertEqual(self.manager.state_file.read_text(encoding="utf-8"), "{bad json")
+
+    def test_illegal_stage_transition_rejected(self):
+        self.manager.init_state()
+        with self.assertRaises(InvalidStateTransition):
+            self.manager.transition_stage("synthesis", StageStatus.COMPLETED)
+
+    def test_illegal_job_transition_rejected(self):
+        self.manager.init_state()
+        with self.assertRaises(InvalidStateTransition):
+            self.manager.transition_job(JobStatus.COMPLETED)
+
+    def test_persisted_schema_version_is_three(self):
+        self.manager.init_state()
+        payload = json.loads(self.manager.state_file.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], 3)
 
     def test_invalid_job_ids_rejected(self):
         for bad_id in ("", "..", "../escape", "bad job", "bad.job", "-bad"):
-            with self.subTest(job_id=bad_id):
-                with self.assertRaises(ValueError):
-                    StateManager(bad_id)
+            with self.subTest(job_id=bad_id), self.assertRaises(ValueError):
+                StateManager(bad_id, self.root)
 
     def test_validate_job_id_accepts_safe_ids(self):
         self.assertEqual(validate_job_id("job_20260613-a"), "job_20260613-a")

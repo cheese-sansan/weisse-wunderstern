@@ -1,90 +1,98 @@
-"""ContextStore 单元测试。"""
-import unittest
-import os
-import shutil
+"""Schema-v3 semantic context tests."""
+
+import json
+import tempfile
 import threading
-from utils.context_manager import ContextStore
+import unittest
+from pathlib import Path
+
+from noteforge.errors import NoteForgeError
+from noteforge.storage.context import SEMANTIC_KEYS, ContextStore
 
 
 class TestContextStore(unittest.TestCase):
-
     def setUp(self):
-        self.job_id = "test_job_cs"
-        self.cs = ContextStore(self.job_id)
-        self._clean()
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.store = ContextStore("test_job_cs", self.root)
 
     def tearDown(self):
-        self._clean()
-
-    def _clean(self):
-        d = os.path.join("outputs", "jobs", self.job_id)
-        if os.path.exists(d):
-            shutil.rmtree(d)
+        self.temp.cleanup()
 
     def test_save_and_load(self):
-        self.cs.save("T1", {"keywords": ["AI"]})
-        result = self.cs.load("T1")
-        self.assertEqual(result, {"keywords": ["AI"]})
+        self.store.save("keywords", {"keywords": ["AI"]})
+        self.assertEqual(self.store.load("keywords"), {"keywords": ["AI"]})
 
     def test_load_missing_key(self):
-        result = self.cs.load("nonexistent")
-        self.assertIsNone(result)
+        self.assertIsNone(self.store.load("report"))
 
-    def test_load_all(self):
-        self.cs.save("T1", "data1")
-        self.cs.save("T2", "data2")
-        all_data = self.cs.load_all()
-        self.assertIn("T1", all_data)
-        self.assertIn("T2", all_data)
+    def test_load_all_has_schema_version(self):
+        self.store.save("input", {"topic": "AI"})
+        data = self.store.load_all()
+        self.assertEqual(data["schema_version"], 3)
+        self.assertIn("input", data)
 
-    def test_ctx_file_path(self):
-        expected = os.path.join("outputs", "jobs", self.job_id, "context_data.json")
-        self.assertTrue(self.cs._ctx_file.endswith(expected))
+    def test_context_file_path(self):
+        self.assertEqual(self.store.context_file, self.root / "jobs" / "test_job_cs" / "context_data.json")
 
     def test_job_isolation(self):
-        cs1 = ContextStore("job_a")
-        cs2 = ContextStore("job_b")
-        cs1.save("T1", "a")
-        cs2.save("T1", "b")
-        self.assertEqual(cs1.load("T1"), "a")
-        self.assertEqual(cs2.load("T1"), "b")
-        for j in ("job_a", "job_b"):
-            d = os.path.join("outputs", "jobs", j)
-            if os.path.exists(d):
-                shutil.rmtree(d)
+        first = ContextStore("job_a", self.root)
+        second = ContextStore("job_b", self.root)
+        first.save("input", "a")
+        second.save("input", "b")
+        self.assertEqual(first.load("input"), "a")
+        self.assertEqual(second.load("input"), "b")
+
+    def test_rejects_t_keys_and_unknown_keys(self):
+        for key in ("T0", "T6", "unknown"):
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                self.store.save(key, {})
+
+    def test_semantic_key_contract(self):
+        self.assertEqual(SEMANTIC_KEYS, {
+            "input", "document", "keywords", "literature", "synthesis",
+            "technical_cases", "policy_assessment", "report",
+        })
+
+    def test_corrupt_context_raises_structured_error(self):
+        self.store.save("input", {"topic": "AI"})
+        self.store.context_file.write_text("{bad", encoding="utf-8")
+        with self.assertRaises(NoteForgeError):
+            self.store.load_all()
 
     def test_invalid_job_ids_rejected(self):
         for bad_id in ("", "..", "../escape", "bad job", "bad.job", "-bad"):
-            with self.subTest(job_id=bad_id):
-                with self.assertRaises(ValueError):
-                    ContextStore(bad_id)
+            with self.subTest(job_id=bad_id), self.assertRaises(ValueError):
+                ContextStore(bad_id, self.root)
 
     def test_multiple_stores_same_job_preserve_keys(self):
-        cs1 = ContextStore(self.job_id)
-        cs2 = ContextStore(self.job_id)
+        first = ContextStore("test_job_cs", self.root)
+        second = ContextStore("test_job_cs", self.root)
         errors = []
 
-        def save_many(store, prefix):
+        def save_many(store, keys):
             try:
-                for i in range(20):
-                    store.save(f"{prefix}_{i}", i)
-            except Exception as e:
-                errors.append(e)
+                for key in keys:
+                    store.save(key, {"owner": key})
+            except Exception as error:  # pragma: no cover - asserted below
+                errors.append(error)
 
+        keys = list(SEMANTIC_KEYS)
         threads = [
-            threading.Thread(target=save_many, args=(cs1, "a")),
-            threading.Thread(target=save_many, args=(cs2, "b")),
+            threading.Thread(target=save_many, args=(first, keys[:4])),
+            threading.Thread(target=save_many, args=(second, keys[4:])),
         ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
         self.assertEqual(errors, [])
-        data = self.cs.load_all()
-        self.assertEqual(len(data), 40)
-        self.assertIn("a_0", data)
-        self.assertIn("b_19", data)
+        self.assertTrue(SEMANTIC_KEYS.issubset(self.store.load_all()))
+
+    def test_json_contains_no_legacy_task_keys(self):
+        self.store.save("literature", {"status": "ok"})
+        payload = json.loads(self.store.context_file.read_text(encoding="utf-8"))
+        self.assertFalse(any(key.startswith("T") for key in payload))
 
 
 if __name__ == "__main__":

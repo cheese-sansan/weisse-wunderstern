@@ -1,0 +1,8 @@
+{
+  "input": {"result": {"topic": "transformer deployment", "provider": "mock", "job_id": "fixture_job"}},
+  "T1": {"result": {"keywords": ["transformer"], "academic_entities": {"methods": ["Transformer"], "domains": ["NLP"]}}},
+  "T2": {"result": {"provider": "mock", "status": "ok", "query": "transformer", "retrieved_at": "2026-06-13T02:00:00+00:00", "warnings": [], "literature_results": []}},
+  "T3": {"result": {"final_report": "Legacy synthesis"}},
+  "T4": {"result": {"report_path": "outputs/jobs/fixture_job/report_framework.md", "sources": [], "warnings": []}},
+  "T5": {"result": {"status": "ok", "warnings": [], "cases": []}}
+}

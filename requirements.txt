@@ -1,8 +1,0 @@
-# Core CLI dependencies
-#
-# The CLI pipeline and Mock mode use only the Python standard library.
-# Install optional groups as needed:
-#
-#   pip install -r requirements-api.txt
-#   pip install -r requirements-extras.txt
-#   pip install -r requirements-dev.txt

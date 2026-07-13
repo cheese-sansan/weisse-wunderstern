@@ -1,0 +1,15 @@
+{
+  "job_id": "fixture_job",
+  "status": "COMPLETED",
+  "current_task": null,
+  "created_at": "2026-06-13 10:00:00",
+  "updated_at": "2026-06-13 10:01:00",
+  "error": null,
+  "task_list": [
+    {"task_id": "T1", "task_name": "关键词提取", "status": "完成", "status_history": [{"status": "完成", "timestamp": "2026-06-13 10:00:10"}]},
+    {"task_id": "T2", "task_name": "文献检索", "status": "完成", "status_history": [{"status": "完成", "timestamp": "2026-06-13 10:00:20"}]},
+    {"task_id": "T3", "task_name": "学术提炼", "status": "完成", "status_history": [{"status": "完成", "timestamp": "2026-06-13 10:00:30"}]},
+    {"task_id": "T4", "task_name": "报告生成", "status": "完成", "status_history": [{"status": "完成", "timestamp": "2026-06-13 10:00:40"}]},
+    {"task_id": "T5", "task_name": "技术案例", "status": "完成", "status_history": [{"status": "完成", "timestamp": "2026-06-13 10:00:35"}]}
+  ]
+}

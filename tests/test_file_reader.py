@@ -1,9 +1,9 @@
 """file_reader 单元测试。"""
-import unittest
 import os
 import tempfile
-import importlib.util
-from utils.file_reader import read_file, _contains_latex, _table_to_markdown
+import unittest
+
+from noteforge.document_io import _contains_latex, _table_to_markdown, read_file
 
 
 class TestFileReader(unittest.TestCase):
@@ -69,7 +69,6 @@ class TestFileReader(unittest.TestCase):
         finally:
             os.unlink(tmp)
 
-    @unittest.skipIf(importlib.util.find_spec("docx") is None, "python-docx not installed")
     def test_read_docx_table_as_markdown_when_dependency_available(self):
         from docx import Document
 

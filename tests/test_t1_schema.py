@@ -1,6 +1,7 @@
 """T1 关键词与学术实体 schema 单元测试。"""
 import unittest
-from tasks.t1_keyword_extraction import run, _normalize, _mock_extract
+
+from noteforge.stages.keywords import _normalize, run
 
 
 class TestT1Schema(unittest.TestCase):

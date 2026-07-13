@@ -13,7 +13,7 @@ Implemented in the current release:
 - Final `report.md` with sources, warnings, and compatibility output for v0.1 clients.
 - Real topic/document examples and an explicit Mock-versus-real behavior guide.
 
-## v0.3: Python Engineering
+## v0.3: Python Engineering (implemented)
 
 - Adopt `pyproject.toml` and a `src/noteforge/` package layout.
 - Add an installed `noteforge` command and stable SDK models.

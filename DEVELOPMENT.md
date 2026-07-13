@@ -1,114 +1,44 @@
 # Development Guide
 
-This document describes the public architecture and development workflow for NoteForge.
-
 ## Architecture
 
-```text
-input topic/file
-  -> core.pipeline.run_job
-  -> T0 document parsing, when file input exists
-  -> T1 keyword and academic entity extraction
-  -> T2 structured literature candidates
-  -> T3 extractor / critic / synthesizer report loop
-  -> T4 Markdown report framework
-  -> optional T5/T6 lightweight dynamic branches
-```
-
-The CLI, TUI, and API all share `core.pipeline.run_job`.
-
-## Public Entrypoints
-
-- `main.py`: CLI entrypoint.
-- `main_tui.py`: zero-dependency text UI.
-- `main_api.py`: FastAPI service.
-- `core.run_job`: Python integration surface.
-
-## Job Artifacts
-
-Each job writes to `outputs/jobs/{job_id}/`:
+All entry points call `noteforge.run_job(AnalysisRequest, output_root=...)`. The pipeline persists schema-v3 semantic context keys:
 
 ```text
-task_state.json
-context_data.json
-resume_log.txt
-report.md
-report_framework.md  # v0.1 compatibility copy
+input -> document -> keywords -> literature -> synthesis
+      -> technical_cases -> policy_assessment -> report
 ```
 
-`StateManager` and `ContextStore` validate `job_id`, isolate per-job state, and write JSON atomically.
+Job states are `PENDING`, `RUNNING`, `COMPLETED`, and `FAILED`. Stage states add `SKIPPED`. Invalid transitions raise a structured `NoteForgeError`.
 
-## Dependencies
+The package uses a `src/noteforge` layout. `core`, `tasks`, and `utils` are deliberately not compatibility packages in v0.3.
 
-- `requirements.txt`: core note; CLI/Mock mode uses the standard library.
-- `requirements-api.txt`: FastAPI service dependencies.
-- `requirements-dev.txt`: test/development dependencies.
-- `requirements-extras.txt`: optional document parsing dependencies.
-
-## Local Development
+## Environment
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements-dev.txt
-```
-
-Linux/macOS:
-
-```bash
-source .venv/bin/activate
+python -m pip install ".[dev,documents]"
 ```
 
 ## Verification
 
-Run before committing:
-
 ```bash
-python check_all.py
-python smoke_test.py
-```
-
-Run when API, upload, authentication, or deployment code changes:
-
-```bash
-python test_api_client.py
+python -m build --wheel
+ruff check src/noteforge tests scripts
+pyright src/noteforge
+pytest --cov=noteforge --cov-report=term-missing --cov-fail-under=80
+python scripts/check_openapi.py
+python scripts/api_smoke.py
+python scripts/privacy_audit.py
 docker compose config
 docker compose build api
 ```
 
-Run before public release:
+CI builds and installs a wheel before testing. It also installs and exercises the wheel on Python 3.10, 3.11, 3.12, and 3.13. Changes to HTTP v1 require deliberate review of `tests/snapshots/openapi_v1.json`.
 
-```bash
-python scripts/privacy_audit.py --history
-python scripts/privacy_audit.py --include-outputs
-```
+## Persistence
 
-## Docker Notes
+`StateManager` and `ContextStore` validate job IDs and use atomic replacement. The migration layer backs up v0.2 files byte-for-byte, validates both v3 documents before replacement, and restores originals if either replacement fails.
 
-```bash
-docker compose up -d
-docker compose down
-```
-
-Optional extras image:
-
-```powershell
-$env:INSTALL_EXTRAS="true"
-docker compose build api
-```
-
-Base image override:
-
-```powershell
-$env:PYTHON_IMAGE="docker.m.daocloud.io/library/python:3.10-slim"
-docker compose build api
-```
-
-## Development Principles
-
-- Mock mode must remain fully usable without external services.
-- Simulated literature must be labeled with `source_type: simulated`.
-- Do not claim real external literature retrieval until a real provider is implemented.
-- Do not log or commit credentials, generated reports, private paths, or local-only documents.
-- Keep downstream imports stable where practical: `core.run_job`, `PipelineError`, `StateManager`, `ContextStore`, and `read_file`.
+Keep mock data visibly simulated, keep provider failures visible, and never commit credentials or generated jobs.

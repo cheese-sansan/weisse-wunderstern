@@ -13,7 +13,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 DEFAULT_EXCLUDED_DIRS = {
     ".git",
     ".idea",

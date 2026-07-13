@@ -1,7 +1,10 @@
 """T3 Extractor-Critic-Synthesizer 单元测试。"""
 import unittest
-from tasks.t3_summary_generation import (
-    run, _mock_extract, _mock_critic, _mock_synthesize,
+
+from noteforge.stages.synthesis import (
+    _mock_critic,
+    _mock_extract,
+    run,
 )
 
 

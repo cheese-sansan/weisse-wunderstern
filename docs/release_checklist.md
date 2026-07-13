@@ -1,39 +1,22 @@
-# Release Checklist
+# v0.3 Release Checklist
 
-## Before Tagging
-
-- Confirm `main` is the intended release branch and all v0.2 changes are reviewed.
-- Confirm no `.env`, generated jobs, private documents, credentials, caches, or local samples are staged.
-- Confirm real, document, inferred, simulated, and unverified data remain distinguishable.
-- Confirm `core.version`, FastAPI, Changelog, README, and release notes all identify `0.2.0`.
-
-## Validation
+- Confirm `src/noteforge/version.py`, package metadata, CLI, TUI, and FastAPI report `0.3.0`.
+- Confirm wheel installation works outside the checkout on Python 3.10–3.13.
+- Confirm all CLI subcommands and the SDK example run from the installed wheel.
+- Confirm no legacy root launch scripts, `core/tasks/utils`, or `requirements-*.txt` files remain.
+- Confirm all tests pass with no skips and coverage is at least 80%.
+- Run Ruff, Pyright standard, OpenAPI snapshot, API smoke, privacy audit, Compose validation, and Docker build.
+- Confirm v0.2 migration success, byte-exact backups, idempotence, rollback, and concurrent first-read tests pass.
+- Confirm API v1 paths, request fields, response fields, and status codes match the committed snapshot.
 
 ```bash
-python check_all.py
-python smoke_test.py
-python test_api_client.py
+python -m build --wheel
+ruff check src/noteforge tests scripts
+pyright src/noteforge
+pytest --cov=noteforge --cov-fail-under=80
+python scripts/check_openapi.py
+python scripts/api_smoke.py
 python scripts/privacy_audit.py --history
-python scripts/privacy_audit.py --include-outputs
 docker compose config
 docker compose build api
 ```
-
-Run one opt-in real retrieval check separately from deterministic CI:
-
-```bash
-python main.py --topic "transformer model evaluation" --provider crossref --output release_crossref_check
-```
-
-Verify the report lists `crossref/external_api`, contains no automatic simulated fallback, and handles missing abstracts without fabricated findings.
-
-## Tagging
-
-```bash
-git checkout main
-git pull --ff-only
-git tag -a v0.2.0 -m "NoteForge v0.2.0"
-git push origin v0.2.0
-```
-
-Use `docs/releases/v0.2.0.md` as the GitHub release notes. Do not upload generated jobs as release assets.

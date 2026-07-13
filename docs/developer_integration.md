@@ -1,99 +1,54 @@
 # Developer Integration
 
-NoteForge can be embedded as a small Python library.
-
-## Run A Job
+## Stable SDK
 
 ```python
-from core import run_job
+from pathlib import Path
 
-run_job(
-    job_id="my_analysis_job",
+from noteforge import AnalysisRequest, JobResult, run_job
+
+request = AnalysisRequest(
     topic="LLM benchmark evaluation",
-    file_path="./examples/sample_paper_abstract.md",
+    file_path=Path("examples/sample_paper_abstract.md"),
     provider="crossref",
+    job_id="my-analysis-job",
 )
+result: JobResult = run_job(request, output_root=Path("outputs"))
 ```
 
-Artifacts are written to:
+`JobResult` contains `job_id`, `status`, `report_path`, `sources`, `warnings`, `tech_cases`, and `policies`. Dataclass models provide `to_dict`, `to_json`, `from_dict`, and `from_json`; incoming schema markers are validated against schema v3.
 
-```text
-outputs/jobs/my_analysis_job/
-├── task_state.json
-├── context_data.json
-├── resume_log.txt
-├── report.md
-└── report_framework.md  # v0.1 compatibility copy
-```
-
-## Read State And Context
+Resume with persisted input:
 
 ```python
-from utils.state_manager import StateManager
-from utils.context_manager import ContextStore
-
-state = StateManager("my_analysis_job").load_state()
-context = ContextStore("my_analysis_job").load_all()
+result = run_job(AnalysisRequest(job_id="my-analysis-job"))
 ```
 
-`StateManager` and `ContextStore` validate `job_id`, isolate each job, and write JSON atomically.
-
-## Parse A File
+## Provider contract
 
 ```python
-from utils.file_reader import read_file
-
-result = read_file("./examples/sample_paper_abstract.md")
-print(result["content"])
-```
-
-Optional parsers for PDF, DOCX, spreadsheets, presentations, EPUB, and OCR-related formats are listed in `requirements-extras.txt`.
-
-## Custom Literature Provider
-
-`tasks.t2_literature_search.LiteratureProvider` is the extension point for real retrieval integrations.
-
-```python
-from tasks.t2_literature_search import LiteratureProvider
+from noteforge import LiteratureProvider, LiteratureQuery, LiteratureSearchResult
 
 
 class MyProvider(LiteratureProvider):
-    def search(self, query: dict) -> dict:
-        return {
-            "provider": "my-provider",
-            "query": "example",
-            "status": "ok",
-            "retrieved_at": "2026-07-10T00:00:00+00:00",
-            "warnings": [],
-            "literature_results": [
-                {
-                    "source_id": "L1",
-                    "title": "Example",
-                    "authors": ["A. Author"],
-                    "year": 2026,
-                    "doi": "10.1000/example",
-                    "url": "https://doi.org/10.1000/example",
-                    "abstract": "Source-provided abstract",
-                    "source_type": "external_api",
-                    "source_provider": "my-provider",
-                    "retrieved_at": "2026-07-10T00:00:00+00:00",
-                }
-            ]
-        }
+    name = "my-provider"
+
+    def search(self, query: LiteratureQuery) -> LiteratureSearchResult:
+        ...
 ```
 
-Keep `source_type` explicit. Simulated results must not be presented as verified external citations. Legacy providers returning only `literature_results` remain readable in v0.2, but should migrate to the full envelope before v0.3.
+Provider records must label `source_type` and `source_provider`. Simulated records must never be represented as retrieved evidence.
 
-## Stable Imports
+## Internal persistence access
 
-Recommended public imports:
+Persistence classes are available for operational tools but are not part of the small top-level SDK surface:
 
 ```python
-from core import run_job, PipelineError, __version__
-from utils.state_manager import StateManager
-from utils.context_manager import ContextStore
-from utils.file_reader import read_file
-from tasks.t2_literature_search import LiteratureProvider
+from noteforge.storage.context import ContextStore
+from noteforge.storage.state import StateManager
+
+state = StateManager("my-analysis-job").load_state()
+context = ContextStore("my-analysis-job").load_all()
 ```
 
-Internal task implementation details may change between releases.
+Do not import v0.2 paths such as `core.pipeline`, `tasks.t2_literature_search`, or `utils.state_manager`; they were removed in v0.3.
